@@ -63,7 +63,7 @@ Key architectural insights from Claude Code have been distilled and applied:
 
 ### Phase 1: Model Downloads & Configuration
 
-1. **Create model download script**  **COMPLETED BY CURSOR**
+1. **Create model download script** 
    - `scripts/download-models.sh` - Downloads all 4 models as GGUF quantized files
    - Models: Gemma2-2B, Nemotron Nano 8B, Devstral 24B, Qwen3-Coder 32B
    - Quantization: Q6_K (recommended) or Q8_0 (within 1-2% of FP16 quality)
@@ -86,7 +86,7 @@ Key architectural insights from Claude Code have been distilled and applied:
 
 ### Phase 2: Agent Intelligence Layer
 
-3. **Create agent system prompts**  **COMPLETED BY CURSOR**
+3. **Create agent system prompts** 
    - `prompts/preprocessor-system.md` - Audio/image/text preprocessing
    - `prompts/planner-system.md` - Task decomposition with MCP tool usage
    - `prompts/coder-system.md` - Code generation with context awareness
@@ -126,14 +126,14 @@ Key architectural insights from Claude Code have been distilled and applied:
 
 ### Phase 3: MCP Server Implementation
 
-5. **Build MCP codebase server**  **COMPLETED BY CURSOR**
+5. **Build MCP codebase server** 
    - `orchestrator/mcp_server.py` - Exposes codebase as tools (FastAPI-based HTTP server)
    - Tools: read_file, analyze_codebase, search_docs, find_references, git_diff, run_tests
    - Security: Path traversal protection, safe file access
    - `Dockerfile.mcp` - Container for MCP server
    - **Status**: FastAPI server with all 6 tools, health check, and error handling
 
-6. **MCP server API endpoints**  **COMPLETED BY CURSOR**
+6. **MCP server API endpoints** 
    - Health check endpoint (`/health`)
    - Tool listing endpoint (`/api/mcp/tools`)
    - Tool execution endpoint (`/api/mcp/tool`)
@@ -143,7 +143,7 @@ Key architectural insights from Claude Code have been distilled and applied:
 
 ### Phase 4: Orchestrator Implementation
 
-7. **Build orchestrator core**  **COMPLETED BY CURSOR**
+7. **Build orchestrator core** 
    - `orchestrator/orchestrator.py` - Main workflow coordination
    - TaskState dataclass with Redis persistence
    - Agent communication via llama.cpp endpoints (port 8080 with /v1 prefix)
@@ -151,7 +151,7 @@ Key architectural insights from Claude Code have been distilled and applied:
    - MCP integration for codebase queries
    - **Status**: Full orchestrator with workflow stages, error handling, and state management
 
-8. **Implement workflow stages**  **COMPLETED BY CURSOR**
+8. **Implement workflow stages** 
    - Preprocessing stage (multimodal → text)
    - Planning stage (with MCP queries for codebase context)
    - Coding stage (with iterative refinement)
@@ -159,7 +159,7 @@ Key architectural insights from Claude Code have been distilled and applied:
    - Final output generation
    - **Status**: All stages implemented with proper error handling and JSON parsing
 
-9. **Redis state management**  **COMPLETED BY CURSOR**
+9. **Redis state management** 
    - Task state persistence
    - Agent awareness (checking other agents' states)
    - Conversation history
@@ -168,7 +168,7 @@ Key architectural insights from Claude Code have been distilled and applied:
 
 ### Phase 5: Docker Compose Setup (llama.cpp Metal)
 
-10. **Create docker-compose.yml (llama.cpp Metal version)**  **COMPLETED BY CURSOR**
+10. **Create docker-compose.yml (llama.cpp Metal version)** 
     - 4 llama.cpp server services using Metal backend (ports 8000-8003)
     - Each service uses `ghcr.io/ggerganov/llama.cpp:server-metal` image
     - Metal optimizations: 
@@ -186,20 +186,20 @@ Key architectural insights from Claude Code have been distilled and applied:
     - All services auto-recover from Metal context loss on sleep/wake
     - **Status**: Complete docker-compose.yml with all 7 services configured
 
-11. **Create Dockerfiles**  **COMPLETED BY CURSOR**
+11. **Create Dockerfiles** 
     - `Dockerfile.orchestrator` - Python 3.11, dependencies, orchestrator code
     - `Dockerfile.mcp` - MCP server container
     - Both with proper health checks
     - Note: llama.cpp services use pre-built Metal image, no custom Dockerfile needed
     - **Status**: Both Dockerfiles created with proper structure
 
-12. **Create requirements.txt**  **COMPLETED BY CURSOR**
+12. **Create requirements.txt** 
     - redis, httpx, fastapi, uvicorn, pydantic, aiofiles, python-dotenv
     - **Status**: All dependencies listed with versions
 
 ### Phase 6: API Server & Integration
 
-13. **Build FastAPI server**  **COMPLETED BY CURSOR**
+13. **Build FastAPI server** 
     - `orchestrator/api_server.py` - REST API for workflow execution
     - `/api/workflow` endpoint - Accepts user input, returns streaming response (SSE)
     - `/api/task/{task_id}` endpoint - Get task status from Redis
@@ -217,14 +217,14 @@ Key architectural insights from Claude Code have been distilled and applied:
 
 ### Phase 7: Testing & Validation
 
-15. **Create test suite**  **COMPLETED BY CURSOR**
+15. **Create test suite** 
     - `tests/test_workflow.sh` - Health checks, end-to-end workflow test
     - Tests all services (ports 8000-8003, 9001, 8080)
     - Tests MCP server tools
     - Tests orchestrator workflow
     - **Status**: Test script created with health checks and workflow validation
 
-16. **Documentation**  **COMPLETED BY CURSOR**
+16. **Documentation** 
     - `README.md` - Setup instructions, architecture overview, quick start guide
     - Troubleshooting section included
     - Performance metrics documented

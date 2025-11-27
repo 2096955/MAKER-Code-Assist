@@ -44,7 +44,7 @@ All agents communicate via Redis state and codebase server REST API for codebase
 
 ### Phase 1: Model Downloads & Configuration
 
-1. **Create model download script** ✅ **COMPLETED BY CURSOR**
+1. **Create model download script** 
    - `scripts/download-models.sh` - Downloads all 4 models as GGUF quantized files
    - Models: Gemma2-2B, Nemotron Nano 8B, Devstral 24B, Qwen3-Coder 32B
    - Quantization: Q6_K (recommended) or Q8_0 (within 1-2% of FP16 quality)
@@ -67,7 +67,7 @@ All agents communicate via Redis state and codebase server REST API for codebase
 
 ### Phase 2: Agent Intelligence Layer
 
-3. **Create agent system prompts** ✅ **COMPLETED BY CURSOR**
+3. **Create agent system prompts** 
    - `prompts/preprocessor-system.md` - Audio/image/text preprocessing
    - `prompts/planner-system.md` - Task decomposition with codebase server tool usage
    - `prompts/coder-system.md` - Code generation with context awareness
@@ -107,7 +107,7 @@ All agents communicate via Redis state and codebase server REST API for codebase
 
 ### Phase 3: Codebase Server Implementation
 
-5. **Build codebase server** ✅ **COMPLETED BY CURSOR**
+5. **Build codebase server** 
    - `orchestrator/mcp_server.py` - Exposes codebase as tools (FastAPI-based HTTP REST server)
    - **IMPORTANT**: This is a REST API, NOT MCP (JSON-RPC 2.0) protocol
    - Tools: read_file, analyze_codebase, search_docs, find_references, git_diff, run_tests
@@ -115,7 +115,7 @@ All agents communicate via Redis state and codebase server REST API for codebase
    - `Dockerfile.mcp` - Container for codebase server
    - **Status**: FastAPI REST server with all 6 tools, health check, and error handling
 
-6. **Codebase server API endpoints** ✅ **COMPLETED BY CURSOR**
+6. **Codebase server API endpoints** 
    - Health check endpoint (`/health`)
    - Tool listing endpoint (`/api/mcp/tools`)
    - Tool execution endpoint (`/api/mcp/tool`)
@@ -125,7 +125,7 @@ All agents communicate via Redis state and codebase server REST API for codebase
 
 ### Phase 4: Orchestrator Implementation
 
-7. **Build orchestrator core** ✅ **COMPLETED BY CURSOR**
+7. **Build orchestrator core** 
    - `orchestrator/orchestrator.py` - Main workflow coordination
    - TaskState dataclass with Redis persistence
    - Agent communication via llama.cpp endpoints (port 8080 with /v1 prefix)
@@ -133,7 +133,7 @@ All agents communicate via Redis state and codebase server REST API for codebase
    - MCP integration for codebase queries
    - **Status**: Full orchestrator with workflow stages, error handling, and state management
 
-8. **Implement workflow stages** ✅ **COMPLETED BY CURSOR**
+8. **Implement workflow stages** 
    - Preprocessing stage (multimodal → text)
    - Planning stage (with codebase server queries for codebase context)
    - Coding stage (with iterative refinement)
@@ -141,7 +141,7 @@ All agents communicate via Redis state and codebase server REST API for codebase
    - Final output generation
    - **Status**: All stages implemented with proper error handling and JSON parsing
 
-9. **Redis state management** ✅ **COMPLETED BY CURSOR**
+9. **Redis state management** 
    - Task state persistence
    - Agent awareness (checking other agents' states)
    - Conversation history
@@ -150,7 +150,7 @@ All agents communicate via Redis state and codebase server REST API for codebase
 
 ### Phase 5: Docker Compose Setup (llama.cpp Metal)
 
-10. **Create docker-compose.yml (llama.cpp Metal version)** ✅ **COMPLETED BY CURSOR**
+10. **Create docker-compose.yml (llama.cpp Metal version)** 
     - 4 llama.cpp server services using Metal backend (ports 8000-8003)
     - Each service uses `ghcr.io/ggerganov/llama.cpp:server-metal` image
     - Metal optimizations: 
@@ -168,20 +168,20 @@ All agents communicate via Redis state and codebase server REST API for codebase
     - All services auto-recover from Metal context loss on sleep/wake
     - **Status**: Complete docker-compose.yml with all 7 services configured
 
-11. **Create Dockerfiles** ✅ **COMPLETED BY CURSOR**
+11. **Create Dockerfiles** 
     - `Dockerfile.orchestrator` - Python 3.11, dependencies, orchestrator code
     - `Dockerfile.mcp` - MCP server container
     - Both with proper health checks
     - Note: llama.cpp services use pre-built Metal image, no custom Dockerfile needed
     - **Status**: Both Dockerfiles created with proper structure
 
-12. **Create requirements.txt** ✅ **COMPLETED BY CURSOR**
+12. **Create requirements.txt** 
     - redis, httpx, fastapi, uvicorn, pydantic, aiofiles, python-dotenv
     - **Status**: All dependencies listed with versions
 
 ### Phase 6: API Server & Integration
 
-13. **Build FastAPI server** ✅ **COMPLETED BY CURSOR**
+13. **Build FastAPI server** 
     - `orchestrator/api_server.py` - REST API for workflow execution
     - `/api/workflow` endpoint - Accepts user input, returns streaming response (SSE)
     - `/api/task/{task_id}` endpoint - Get task status from Redis
@@ -199,14 +199,14 @@ All agents communicate via Redis state and codebase server REST API for codebase
 
 ### Phase 7: Testing & Validation
 
-15. **Create test suite** ✅ **COMPLETED BY CURSOR**
+15. **Create test suite** 
     - `tests/test_workflow.sh` - Health checks, end-to-end workflow test
     - Tests all services (ports 8000-8003, 9001, 8080)
     - Tests MCP server tools
     - Tests orchestrator workflow
     - **Status**: Test script created with health checks and workflow validation
 
-16. **Documentation** ✅ **COMPLETED BY CURSOR**
+16. **Documentation** 
     - `README.md` - Setup instructions, architecture overview, quick start guide
     - Troubleshooting section included
     - Performance metrics documented
@@ -493,28 +493,28 @@ bash tests/test_workflow.sh
 
 ### Why Nemotron Nano (Not Qwen3-Omni)?
 
-- ✅ **6GB RAM** vs 15GB (3x lighter, leaves room for other agents)
-- ✅ **128K context** vs 41K (handles complex task specs + codebase overview)
-- ✅ **Explicitly agentic-trained** (RAG, tool calling, reasoning)
-- ✅ **118-135 t/s** (doesn't bottleneck)
-- ✅ **Reasoning toggle** (turn deep thinking on/off)
-- ❌ Qwen3-Omni wastes vision/audio encoders on text-only planning
+-  **6GB RAM** vs 15GB (3x lighter, leaves room for other agents)
+-  **128K context** vs 41K (handles complex task specs + codebase overview)
+-  **Explicitly agentic-trained** (RAG, tool calling, reasoning)
+-  **118-135 t/s** (doesn't bottleneck)
+-  **Reasoning toggle** (turn deep thinking on/off)
+- Issue: Qwen3-Omni wastes vision/audio encoders on text-only planning
 
 ### Why llama.cpp Metal (Not vLLM)?
 
-- ✅ **2-3x faster** on Apple Silicon (Metal acceleration works natively)
-- ✅ **Better memory management** (lower RAM overhead)
-- ✅ **Handles 128K+ context efficiently** (chunked prefill)
-- ✅ **GGUF format** (Q6_K = 1-2% quality loss, 2x faster than FP16)
-- ❌ vLLM is NVIDIA-optimized, CPU-bound on M4 Max
+-  **2-3x faster** on Apple Silicon (Metal acceleration works natively)
+-  **Better memory management** (lower RAM overhead)
+-  **Handles 128K+ context efficiently** (chunked prefill)
+-  **GGUF format** (Q6_K = 1-2% quality loss, 2x faster than FP16)
+- Issue: vLLM is NVIDIA-optimized, CPU-bound on M4 Max
 
 ### Why Agentic RAG via Codebase Server (Not LocalRecall/Traditional RAG)?
 
-- ✅ **Zero reindexing bottleneck** (live queries, not embeddings)
-- ✅ **Fresh context every step** (agents query what they need on-demand)
-- ✅ **Agents understand what they need** (not cosine similarity guessing)
-- ✅ **MCP is stateless** (scales free, no embedding DB growth)
-- ❌ Traditional RAG = embed → search → retrieve (old, slow pattern)
+-  **Zero reindexing bottleneck** (live queries, not embeddings)
+-  **Fresh context every step** (agents query what they need on-demand)
+-  **Agents understand what they need** (not cosine similarity guessing)
+-  **MCP is stateless** (scales free, no embedding DB growth)
+- Issue: Traditional RAG = embed → search → retrieve (old, slow pattern)
 
 ## Troubleshooting Guide
 
@@ -554,15 +554,15 @@ docker compose up -d llama-coder
 
 The system provides:
 
-✅ **Runs entirely locally** (no cloud, no quotas, no billing)  
-✅ **2-3x faster than vLLM** via llama.cpp Metal backend  
-✅ **Sub-25 second complex refactors** (feels like GPT-4o latency)  
-✅ **Eliminates RAG bottlenecks** via codebase server-based agentic context  
-✅ **Full agent intelligence** with MAKER prompts and awareness  
-✅ **Streaming + chunked delivery** for responsive Windsurf integration  
-✅ **Auto-recovery** on Metal context loss via health checks  
-✅ **Scales to any codebase** (128K context in Planner, 256K in Reviewer)  
-✅ **Works with Windsurf/Cursor** via OpenAI-compatible REST API  
+ **Runs entirely locally** (no cloud, no quotas, no billing)  
+ **2-3x faster than vLLM** via llama.cpp Metal backend  
+ **Sub-25 second complex refactors** (feels like GPT-4o latency)  
+ **Eliminates RAG bottlenecks** via codebase server-based agentic context  
+ **Full agent intelligence** with MAKER prompts and awareness  
+ **Streaming + chunked delivery** for responsive Windsurf integration  
+ **Auto-recovery** on Metal context loss via health checks  
+ **Scales to any codebase** (128K context in Planner, 256K in Reviewer)  
+ **Works with Windsurf/Cursor** via OpenAI-compatible REST API  
 
 **This is 10/10 for M4 Max 128GB.**
 
@@ -580,87 +580,87 @@ The system provides:
 - [ ] Test one agent: `curl http://localhost:8001/health`
 - [ ] Connect Windsurf (Settings → Models → Custom OpenAI)
 - [ ] Test: Cmd+I + simple prompt
-- [ ] Ship it! 🚀
+- [ ] Ship it! 
 
 ## Implementation Todos
 
-1. Create model download script for GGUF files (with exact TheBloke repo paths) ✅ **CURSOR**
-2. Configure llama.cpp Metal services in docker-compose.yml (with full command flags) ✅ **CURSOR** (then modified by Gemini)
-3. Create agent system prompts (with full MAKER intelligence layer) ✅ **CURSOR**
-4. Implement codebase server (with all 6 tools) ✅ **CURSOR**
-5. Create codebase server Dockerfile ✅ **CURSOR**
-6. Implement orchestrator core with llama.cpp endpoints ✅ **CURSOR**
-7. Implement Redis state management ✅ **CURSOR**
-8. Create docker-compose.yml with auto-restart and health checks ✅ **CURSOR** (then fixed by Gemini)
-9. Create orchestrator Dockerfile ✅ **CURSOR**
-10. Create requirements.txt ✅ **CURSOR**
-11. Create FastAPI server ✅ **CURSOR**
-12. Integrate with spec-kit commands ✅ **CURSOR**
-13. Create test suite (with performance benchmarks) ✅ **CURSOR**
-14. Create documentation (including troubleshooting and scaling guides) ✅ **CURSOR**
+1. Create model download script for GGUF files (with exact TheBloke repo paths)
+2. Configure llama.cpp Metal services in docker-compose.yml (with full command flags) (then modified by Gemini)
+3. Create agent system prompts (with full MAKER intelligence layer)
+4. Implement codebase server (with all 6 tools)
+5. Create codebase server Dockerfile
+6. Implement orchestrator core with llama.cpp endpoints
+7. Implement Redis state management
+8. Create docker-compose.yml with auto-restart and health checks (then fixed by Gemini)
+9. Create orchestrator Dockerfile
+10. Create requirements.txt
+11. Create FastAPI server
+12. Integrate with spec-kit commands
+13. Create test suite (with performance benchmarks)
+14. Create documentation (including troubleshooting and scaling guides)
 
 ## Implementation Notes: Cursor vs Gemini
 
 ### What Cursor Did (Initial Implementation):
-- ✅ Created all core files (orchestrator, MCP server, prompts, scripts)
-- ✅ Set up docker-compose.yml with llama.cpp Metal services
-- ✅ Created model download script
-- ✅ Implemented all agent prompts and intelligence layer
-- ✅ Built complete orchestrator with Redis state management
-- ✅ Created FastAPI server with streaming support
-- ✅ Integrated spec-kit commands
-- ⚠️ **Issue**: Used Docker for llama.cpp servers (Metal doesn't work in Linux containers)
+-  Created all core files (orchestrator, MCP server, prompts, scripts)
+-  Set up docker-compose.yml with llama.cpp Metal services
+-  Created model download script
+-  Implemented all agent prompts and intelligence layer
+-  Built complete orchestrator with Redis state management
+-  Created FastAPI server with streaming support
+-  Integrated spec-kit commands
+- Note: **Issue**: Used Docker for llama.cpp servers (Metal doesn't work in Linux containers)
 
 ### What Gemini Fixed (Critical Issues):
-- ✅ **Fixed MCP server healthcheck**: Removed problematic healthcheck, changed dependency from `service_healthy` to `service_started`
-- ✅ **Fixed orchestrator import error**: 
+-  **Fixed MCP server healthcheck**: Removed problematic healthcheck, changed dependency from `service_healthy` to `service_started`
+-  **Fixed orchestrator import error**: 
   - Added `orchestrator/__init__.py` to make it a Python package
   - Changed command from `python orchestrator/api_server.py` to `python -m orchestrator.api_server`
-- ✅ **Fixed llama.cpp architecture**: 
+-  **Fixed llama.cpp architecture**: 
   - Switched from Docker containers to native macOS execution (Metal requires native)
   - Created `scripts/start-llama-servers.sh` for native server management
   - Updated docker-compose.yml to remove llama.cpp services (run natively instead)
-- ✅ **Fixed model downloads**: 
+-  **Fixed model downloads**: 
   - Updated script to use actual available GGUF repositories:
     - Gemma-3-4B: `MaziyarPanahi/gemma-3-4b-it-GGUF`
     - Nemotron-9B: `bartowski/nvidia_NVIDIA-Nemotron-Nano-9B-v2-GGUF`
     - Devstral: `mistralai/Devstral-Small-2505_gguf`
     - Qwen-Coder: `unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF`
-- ✅ **Fixed find_references**: Improved AST-based parsing for Python files (was using simple text search)
+-  **Fixed find_references**: Improved AST-based parsing for Python files (was using simple text search)
 
 ### Current Status:
-- ✅ All 5 models downloaded (~50GB, including Qwen2.5-1.5B voter)
-- ✅ All 5 llama.cpp servers running natively (Metal-accelerated, ports 8000-8004)
-- ✅ MCP server running (port 9001)
-- ✅ Redis running (port 6379)
-- ✅ Orchestrator running (port 8080) - **HEALTHY**
-- ✅ Added OpenAI-compatible endpoints (`/v1/models`, `/v1/chat/completions`)
-- ✅ VS Code / Continue.dev integration configured
+-  All 5 models downloaded (~50GB, including Qwen2.5-1.5B voter)
+-  All 5 llama.cpp servers running natively (Metal-accelerated, ports 8000-8004)
+-  MCP server running (port 9001)
+-  Redis running (port 6379)
+-  Orchestrator running (port 8080) - **HEALTHY**
+-  Added OpenAI-compatible endpoints (`/v1/models`, `/v1/chat/completions`)
+-  VS Code / Continue.dev integration configured
   - Config: `~/.continue/config.json`
   - Model: "Multi-Agent System" ready to use
   - Usage: Cmd+L → Select "Multi-Agent System"
-- ✅ Open WebUI set up and running
+-  Open WebUI set up and running
   - Access: http://localhost:3000
   - Docker container running
   - Ready for chat interface
-- ⚠️ Windsurf integration limited
+- Note: Windsurf integration limited
   - MCP tools connected but cannot use as primary model
   - Windsurf Cascade only supports built-in models
   - Use Continue.dev or Open WebUI instead
-- ⚠️ **Windsurf Integration**: Limited - Cannot use as primary model
+- Note: **Windsurf Integration**: Limited - Cannot use as primary model
   - **Issue**: Windsurf Cascade only supports built-in models (SWE-1, Claude, GPT) as primary LLM
   - **Status**: MCP tools connected (6/6 tools) but cannot replace primary model
   - **Configuration**: MCP wrapper configured in `mcp_settings.json` but not usable as main model
   - **Workaround**: Use VS Code / Continue.dev or Open WebUI instead
   - **Reference**: Terminal 782-892 (Windsurf testing showed limitations)
 
-- ✅ **MAKER Stability Fixes** (Terminal 623-1018)
+-  **MAKER Stability Fixes** (Terminal 623-1018)
   - Truncated context in `generate_candidates()` (max 2K chars) + debug logging to stop 6M-token prompts
   - Removed unused `mcp` dependency and upgraded `httpx` / `fastapi` / `uvicorn` to resolve Docker build conflicts
   - Improved planner JSON extraction (balanced brace regex + safe fallback) and API non-streaming JSON encoding/logging
   - Result: MAKER workflow completes successfully in both streaming & non-streaming modes (Continue.dev & Open WebUI)
 
-- ✅ **VS Code / Continue.dev Integration**: Configured and working
+-  **VS Code / Continue.dev Integration**: Configured and working
   - Extension: Continue.dev (already installed in VS Code-2)
   - Configuration: `~/.continue/config.json`
   - Model: "Multi-Agent System" (http://localhost:8080/v1)
@@ -668,14 +668,14 @@ The system provides:
   - Status: Ready to use
   - **Reference**: Terminal 949-1007 (Continue.dev setup)
 
-- ✅ **Open WebUI Integration**: Set up and running
+-  **Open WebUI Integration**: Set up and running
   - Docker container: `ghcr.io/open-webui/open-webui:main`
   - Access: http://localhost:3000
   - Configuration: Settings → Connections → OpenAI (orchestrator endpoint)
   - Status: Running and accessible
   - **Reference**: Terminal 893-920 (Open WebUI setup)
 
-- ✅ **Performance Fixes Applied by Claude** (see terminal selection 679-970)
+-  **Performance Fixes Applied by Claude** (see terminal selection 679-970)
   - **MCP Server Performance**: Fixed timeout issues
     - Added extensive exclusions: `models`, `.venv`, `venv`, `env`, `.env`, `vendor`, `target`, `.docker`, `docker-data`, `.cache`, `.npm`, `.yarn`, `coverage`, `.idea`, `.vscode`, `.DS_Store`, `tmp`, `temp`, `logs`, `weaviate_data`, `redis_data`, `postgres_data`
     - Added `MAX_FILES=500` limit to prevent scanning too many files
@@ -693,7 +693,7 @@ The system provides:
     - Tested with: `curl -X POST http://localhost:8080/v1/chat/completions`
     - Response shows all stages working: preprocessing, planning with codebase context (25 files found), coding, reviewing
 
-- ✅ **MAKER Voting Implementation by Claude** (see terminal selection 432-1014)
+-  **MAKER Voting Implementation by Claude** (see terminal selection 432-1014)
   - **Purpose**: Improve code precision from ~85-92% to ~97-99%
   - **Voter Model**: Qwen2.5-1.5B-Instruct (Q6_K, ~1.3GB, port 8004)
   - **Mechanism**: 5 parallel Coders → 5 parallel Voters → First-to-3 voting → Winner
@@ -706,7 +706,7 @@ The system provides:
   - **Status**: Tested and working (generates candidates, votes, selects winner)
   - **Performance**: +3GB RAM, same speed (parallel), 97-99% accuracy
 
-- ✅ **True MCP Server Implementation by Claude** (see terminal selection 895-1019)
+-  **True MCP Server Implementation by Claude** (see terminal selection 895-1019)
   - **Created**: `orchestrator/mcp_wrapper.py` - Proper MCP server (JSON-RPC 2.0 over stdio)
     - Wraps the orchestrator as a true MCP server (not just REST API)
     - Uses stdio transport (standard MCP protocol)
