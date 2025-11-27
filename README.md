@@ -70,20 +70,85 @@ This project implements Cognizant's MAKER (Multi-Agent Knowledge-Enhanced Reason
 
 ## Architecture
 
+![Continue.dev Integration](docs/assets/continue-dev-integration.png)
+
 ```
-User Input → Preprocessor → Planner → [MAKER Voting] → Reviewer → Output
-                              ↓              ↓
-                         MCP Tools    Generate N Candidates
-                        (codebase)    Vote (first-to-K)
-                              ↓              ↓
-                    ┌─────────────────────────────────────┐
-                    │         Shared Memory (Redis)        │
-                    └─────────────────────────────────────┘
-                          │         │         │         │
-                    Preprocessor  Planner   Coder   Reviewer
-                    (Gemma2-2B) (Nemotron) (Devstral) (Qwen3-32B)
-                    Port 8000   Port 8001  Port 8002  Port 8003
++------------------+     +-------------------+     +------------------+
+|    IDE Client    |     |   Orchestrator    |     |   MCP Server     |
+|  (Continue.dev)  |     |   (FastAPI)       |     |   (Codebase)     |
+|                  |     |   Port 8080       |     |   Port 9001      |
++--------+---------+     +--------+----------+     +--------+---------+
+         |                        |                         |
+         | OpenAI-compatible API  |    Agentic RAG queries  |
+         | POST /v1/chat/complete |    read_file, run_tests |
+         v                        v                         v
++--------+------------------------+-------------------------+---------+
+|                                                                      |
+|                        MAKER REASONING PIPELINE                      |
+|                                                                      |
+|  +----------------+    +----------------+    +-------------------+   |
+|  |  1. PREPROCESS |    |   2. PLAN      |    |  3. GENERATE      |   |
+|  |                |    |                |    |     (MAKER)       |   |
+|  |  Gemma2-2B     |--->|  Nemotron 8B   |--->|                   |   |
+|  |  Port 8000     |    |  Port 8001     |    |  Coder generates  |   |
+|  |                |    |                |    |  N candidates in  |   |
+|  |  Audio/Image   |    |  Decomposes    |    |  parallel with    |   |
+|  |  to Text       |    |  task + queries|    |  varying temps    |   |
+|  +----------------+    |  MCP for       |    |                   |   |
+|                        |  codebase      |    |  Devstral 24B     |   |
+|                        +----------------+    |  Port 8002        |   |
+|                                              +--------+----------+   |
+|                                                       |              |
+|                                                       v              |
+|                                              +--------+----------+   |
+|                                              |  4. VOTE          |   |
+|                                              |     (MAKER)       |   |
+|                                              |                   |   |
+|                                              |  Qwen2.5-1.5B     |   |
+|                                              |  Port 8004        |   |
+|                                              |                   |   |
+|                                              |  First-to-K       |   |
+|                                              |  voting selects   |   |
+|                                              |  best candidate   |   |
+|                                              +--------+----------+   |
+|                                                       |              |
+|                                                       v              |
+|  +----------------+                          +--------+----------+   |
+|  |  6. OUTPUT     |                          |  5. REVIEW        |   |
+|  |                |<-------------------------|                   |   |
+|  |  Stream back   |       If approved        |  Qwen3-Coder 32B  |   |
+|  |  to IDE        |                          |  Port 8003        |   |
+|  |                |                          |                   |   |
+|  +----------------+                          |  Validates code,  |   |
+|         ^                                    |  runs tests,      |   |
+|         |                                    |  security check   |   |
+|         |         If rejected (max 3x)       +--------+----------+   |
+|         +--------------------------------------------+               |
+|                    Loop back to GENERATE                             |
+|                                                                      |
++----------------------------------------------------------------------+
+                                   |
+                                   v
+                    +-----------------------------+
+                    |      Shared State (Redis)   |
+                    |         Port 6379           |
+                    |                             |
+                    |  - Task progress tracking   |
+                    |  - Iteration count          |
+                    |  - Plan/Code/Review state   |
+                    +-----------------------------+
 ```
+
+### Workflow Summary
+
+1. **IDE** (Continue.dev/Open WebUI) sends request via OpenAI-compatible API
+2. **Preprocessor** converts any audio/image input to text
+3. **Planner** queries MCP for codebase context, decomposes task into subtasks
+4. **Coder** generates N candidate solutions in parallel (MAKER)
+5. **Voter** evaluates candidates using first-to-K voting (MAKER)
+6. **Reviewer** validates winning code, runs tests, checks security
+7. If rejected, loops back to Coder (max 3 iterations)
+8. **Output** streams back to IDE
 
 ## Performance
 
