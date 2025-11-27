@@ -20,6 +20,8 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
+**MULTI-AGENT INTEGRATION**: This command routes AI generation to the orchestrator API (`http://localhost:8080/api/workflow`). File/git operations are handled locally, then orchestrator (Preprocessor + Planner agents) generates the spec content.
+
 The text the user typed after `/speckit.specify` in the triggering message **is** the feature description. Assume you always have it available in this conversation even if `$ARGUMENTS` appears literally below. Do not ask the user to repeat it unless they provided an empty command.
 
 Given that feature description, do this:
@@ -69,7 +71,14 @@ Given that feature description, do this:
 
 3. Load `.specify/templates/spec-template.md` to understand required sections.
 
-4. Follow this execution flow:
+4. **Route to Multi-Agent Orchestrator** (for AI generation):
+   - Call orchestrator API: `POST http://localhost:8080/api/workflow`
+   - Request body: `{"input": "$ARGUMENTS", "stream": true}`
+   - The orchestrator will use Preprocessor + Planner agents to generate spec content
+   - Stream the response and parse the generated spec content
+   - If orchestrator is unavailable, fall back to local generation (steps 4-6 below)
+
+5. Follow this execution flow (if orchestrator unavailable):
 
     1. Parse user description from Input
        If empty: ERROR "No feature description provided"

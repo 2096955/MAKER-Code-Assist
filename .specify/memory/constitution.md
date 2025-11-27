@@ -1,50 +1,74 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+# BreakingWind Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### PRINCIPLE 1: Local-First Execution
+- All inference runs locally on Apple Silicon (M4 Max)
+- No cloud API dependencies for core functionality
+- Privacy by design - code never leaves the machine
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### PRINCIPLE 2: Performance Excellence
+- llama.cpp Metal backend mandatory (not vLLM)
+- Target: <25 seconds end-to-end for complex refactors
+- GGUF Q6_K quantization for optimal speed/quality balance
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### PRINCIPLE 3: Agentic RAG via MCP
+- No traditional embedding/vector DB approaches
+- Live codebase queries via MCP tools
+- Agents fetch exactly what they need on-demand
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### PRINCIPLE 4: Agent Separation of Concerns
+- 4 distinct agents with clear responsibilities
+- Preprocessor: multimodal → text
+- Planner: task decomposition + MCP queries
+- Coder: code generation + testing
+- Reviewer: quality gate (max 3 iterations)
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### PRINCIPLE 5: Resilience & Auto-Recovery
+- Health checks with auto-restart on all services
+- Graceful degradation on agent failure
+- Redis state persistence across restarts
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+## Architecture Constraints
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+**Local Infrastructure Only**
+- Apple Silicon M4 Max optimization required
+- Metal GPU acceleration mandatory
+- No external API dependencies for core workflow
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+**Performance Standards**
+- Sub-25 second response times for complex operations
+- Memory-efficient GGUF Q6_K model quantization
+- Concurrent agent execution where possible
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+**Agent Coordination**
+- MCP-based tool integration
+- Redis for state management and inter-agent communication
+- Docker containerization for service isolation
+
+## Development Workflow
+
+**Agent Testing Requirements**
+- Each agent must be independently testable
+- Integration tests required for agent handoffs
+- Performance benchmarks for critical paths
+
+**Quality Gates**
+- Maximum 3 reviewer iterations per task
+- Automated health checks on all services
+- Graceful degradation testing required
+
+**Change Management**
+- Constitution changes require performance impact analysis
+- All modifications must maintain local-first principle
+- Breaking changes need migration path documentation
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+Constitution supersedes implementation convenience
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+Performance regressions require justification
+
+All agents must be independently testable
+
+**Version**: 1.0.0 | **Ratified**: 2025-11-26

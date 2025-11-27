@@ -20,11 +20,22 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
+**MULTI-AGENT INTEGRATION**: This command routes AI planning to the orchestrator API. After loading context, call orchestrator (Planner agent with MCP queries) to generate the plan.
+
 1. **Setup**: Run `.specify/scripts/bash/setup-plan.sh --json` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. **Load context**: Read FEATURE_SPEC and `.specify/memory/constitution.md`. Load IMPL_PLAN template (already copied).
 
-3. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:
+3. **Route to Multi-Agent Orchestrator** (for AI planning):
+   - Prepare input: Combine FEATURE_SPEC content with constitution and tech stack context
+   - Call orchestrator API: `POST http://localhost:8080/api/workflow`
+   - Request body: `{"input": "Create implementation plan for: [FEATURE_SPEC summary]. Tech stack: [from context]. Constitution: [principles]", "stream": true}`
+   - The orchestrator will use Planner agent with MCP queries for codebase-aware planning
+   - Stream the response and parse the generated plan JSON
+   - Write plan to IMPL_PLAN file
+   - If orchestrator is unavailable, fall back to local generation (step 4 below)
+
+4. **Execute plan workflow** (if orchestrator unavailable): Follow the structure in IMPL_PLAN template to:
    - Fill Technical Context (mark unknowns as "NEEDS CLARIFICATION")
    - Fill Constitution Check section from constitution
    - Evaluate gates (ERROR if violations unjustified)

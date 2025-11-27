@@ -12,7 +12,18 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
+**MULTI-AGENT INTEGRATION**: This command routes code generation to the orchestrator API. After loading tasks, call orchestrator (Coder + Reviewer loop) to implement each task.
+
 1. Run `.specify/scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+
+1a. **Route to Multi-Agent Orchestrator** (for code implementation):
+   - After loading tasks.md, for each task:
+   - Call orchestrator API: `POST http://localhost:8080/api/workflow`
+   - Request body: `{"input": "Implement task: [task description]. Context: [from tasks.md and plan.md]", "stream": true}`
+   - The orchestrator will use Coder + Reviewer agents in iterative loop
+   - Stream the response and apply code changes to files
+   - Mark task as complete in tasks.md
+   - If orchestrator is unavailable, fall back to local implementation (steps 2-9 below)
 
 2. **Check checklists status** (if FEATURE_DIR/checklists/ exists):
    - Scan all checklist files in the checklists/ directory

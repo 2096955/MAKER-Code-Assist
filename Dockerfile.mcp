@@ -1,0 +1,21 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy MCP server code
+COPY orchestrator/mcp_server.py ./mcp_server.py
+
+# Expose port
+EXPOSE 8000
+
+# Set environment
+ENV CODEBASE_ROOT=/codebase
+ENV MCP_PORT=8000
+
+# Run MCP server
+CMD ["python", "mcp_server.py"]
+

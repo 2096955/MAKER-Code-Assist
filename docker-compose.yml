@@ -1,0 +1,77 @@
+services:
+  # Note: llama.cpp servers run natively on macOS for Metal acceleration
+  # Use scripts/start-llama-servers.sh to start them
+  # Docker services below are for MCP, Redis, and Orchestrator only
+
+  # MCP Server (Codebase + Tools)
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    container_name: mcp-server
+    ports:
+      - "9001:8000"
+    volumes:
+      - .:/codebase  # Mount your actual codebase
+    environment:
+      - CODEBASE_ROOT=/codebase
+      - MCP_PORT=8000
+    restart: unless-stopped
+
+
+  # Redis (Agent State + Memory)
+  redis:
+    image: redis:7-alpine
+    container_name: redis-agent-memory
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  # Orchestrator (Main Service)
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile.orchestrator
+    container_name: orchestrator
+    ports:
+      - "8080:8080"
+    depends_on:
+      mcp-server:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    # Note: llama.cpp servers run natively, not in Docker
+    # Ensure they're started with: bash scripts/start-llama-servers.sh
+    volumes:
+      - .:/app
+      - ./prompts:/app/prompts
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CODEBASE_ROOT=/app
+      - PROMPTS_DIR=/app/prompts
+      - PREPROCESSOR_URL=http://host.docker.internal:8000/v1/chat/completions
+      - PLANNER_URL=http://host.docker.internal:8001/v1/chat/completions
+      - CODER_URL=http://host.docker.internal:8002/v1/chat/completions
+      - REVIEWER_URL=http://host.docker.internal:8003/v1/chat/completions
+      - VOTER_URL=http://host.docker.internal:8004/v1/chat/completions
+      - MAKER_NUM_CANDIDATES=5
+      - MAKER_VOTE_K=3
+      - MCP_CODEBASE_URL=http://mcp-server:8000
+    restart: unless-stopped
+    command: python -m orchestrator.api_server
+
+volumes:
+  redis_data:
+
+networks:
+  default:
+    name: local-agents
+
