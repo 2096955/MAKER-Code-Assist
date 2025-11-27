@@ -70,8 +70,6 @@ This project implements Cognizant's MAKER (Multi-Agent Knowledge-Enhanced Reason
 
 ## Architecture
 
-![Continue.dev Integration](docs/assets/continue-dev-integration.png)
-
 ```
 +------------------+     +-------------------+     +------------------+
 |    IDE Client    |     |   Orchestrator    |     |   MCP Server     |
