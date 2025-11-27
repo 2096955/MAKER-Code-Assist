@@ -29,3 +29,11 @@ docs/correction-mcp-vs-openai.md
 agents/AGENTS.md
 docs/mcp-wrapper-implementation.md
 docs/multi-agent-system-blueprint.md
+docs/claude-code-insights.md
+docs/integration-status.md
+docs/maker-voting-implementation.md
+docs/model-specific-prompts.md
+multi-agent-system-implementation.plan.md
+plan.md
+Dockerfile.llama-cpp
+orchestrator/mcp_wrapper.py
