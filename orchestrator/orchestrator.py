@@ -70,7 +70,7 @@ class Orchestrator:
         
         # System prompts (loaded from files in prompts/)
         self.system_prompts = {}
-        self.prompts_dir = Path(os.getenv("PROMPTS_DIR", "prompts"))
+        self.prompts_dir = Path(os.getenv("PROMPTS_DIR", "agents"))
     
     def _load_system_prompt(self, agent_name: str) -> str:
         """Load system prompt from prompts/ directory"""
@@ -91,9 +91,9 @@ class Orchestrator:
                 if response.status_code == 200:
                     result = response.json()
                     return result.get("result", "")
-                return f"❌ MCP error: {response.status_code}"
+                return f" MCP error: {response.status_code}"
         except Exception as e:
-            return f"❌ MCP query failed: {str(e)}"
+            return f" MCP query failed: {str(e)}"
     
     async def preprocess_input(self, task_id: str, user_input: str) -> str:
         """Convert audio/image/text to clean text"""
@@ -207,7 +207,7 @@ Vote for the BEST candidate. Reply with only: {', '.join(labels)}
             try:
                 async with client.stream("POST", self.endpoints[agent], json=payload) as response:
                     if response.status_code != 200:
-                        yield f"❌ Agent error: {response.status_code}\n"
+                        yield f" Agent error: {response.status_code}\n"
                         return
                     
                     async for line in response.aiter_lines():
@@ -223,7 +223,7 @@ Vote for the BEST candidate. Reply with only: {', '.join(labels)}
                             except Exception as e:
                                 pass
             except Exception as e:
-                yield f"❌ Agent call failed: {str(e)}\n"
+                yield f" Agent call failed: {str(e)}\n"
     
     def _classify_request(self, user_input: str) -> str:
         """Classify request type: 'simple_code', 'question', 'complex_code'"""
@@ -365,14 +365,14 @@ Create an execution plan with tasks. Use MCP tools if you need more context.
             candidates = await self.generate_candidates(task_desc, preprocessed_text, self.num_candidates)
             
             if len(candidates) == 0:
-                yield "❌ No valid candidates generated\n"
+                yield " No valid candidates generated\n"
                 break
             
             yield f"[MAKER] Got {len(candidates)} candidates, voting (first-to-{self.vote_k})...\n"
             code_output, vote_counts = await self.maker_vote(candidates, task_desc, self.vote_k)
             
             if code_output is None:
-                yield "❌ Voting failed\n"
+                yield " Voting failed\n"
                 break
             
             yield f"[MAKER] Votes: {vote_counts}\n"
@@ -405,7 +405,7 @@ Run tests and validate code quality.
                 state.review_feedback = json.loads(review_output)
             except json.JSONDecodeError:
                 # Extract status from text
-                if "approved" in review_output.lower() or "✅" in review_output:
+                if "approved" in review_output.lower() or "" in review_output:
                     state.review_feedback = {"status": "approved"}
                 else:
                     state.review_feedback = {"status": "failed", "feedback": review_output}
@@ -416,13 +416,13 @@ Run tests and validate code quality.
             if state.review_feedback.get("status") == "approved":
                 state.status = "complete"
                 state.save_to_redis(self.redis)
-                yield "\n✅ Code approved!\n"
+                yield "\n Code approved!\n"
                 break
             else:
-                yield f"\n⚠️ Iteration {state.iteration_count}: Feedback to Coder\n"
+                yield f"\n Iteration {state.iteration_count}: Feedback to Coder\n"
         
         if state.iteration_count >= max_iterations:
-            yield f"\n❌ Max iterations ({max_iterations}) reached. Escalating to Planner.\n"
+            yield f"\n Max iterations ({max_iterations}) reached. Escalating to Planner.\n"
             state.status = "failed"
             state.save_to_redis(self.redis)
         

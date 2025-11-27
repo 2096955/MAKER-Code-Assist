@@ -121,11 +121,11 @@ Voter evaluates based on:
 ## Testing
 
 ### Test Results (Terminal 432-1014)
-- ✅ Voter server accessible from Docker
-- ✅ `generate_candidates()`: Working (2-5 candidates in parallel)
-- ✅ `maker_vote()`: Working (voters returning votes)
-- ✅ Vote parsing: Fixed and working
-- ✅ Full workflow: Tested end-to-end
+-  Voter server accessible from Docker
+-  `generate_candidates()`: Working (2-5 candidates in parallel)
+-  `maker_vote()`: Working (voters returning votes)
+-  Vote parsing: Fixed and working
+-  Full workflow: Tested end-to-end
 
 ### Stability Fixes (Terminal 623-1018)
 - **Token control**: `generate_candidates()` now truncates context to 2K chars + logs task/context lengths (prevents 6M-token prompts).
@@ -147,10 +147,10 @@ curl -X POST http://localhost:8080/v1/chat/completions \
 
 ## Current Status
 
-- ✅ Voter model downloaded
-- ✅ Voter server running
-- ✅ MAKER workflow integrated
-- ✅ Tested and working
+-  Voter model downloaded
+-  Voter server running
+-  MAKER workflow integrated
+-  Tested and working
 
 ## Future Enhancements
 

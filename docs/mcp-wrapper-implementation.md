@@ -101,11 +101,11 @@ llama.cpp servers (ports 8000-8003)
 
 ## Status
 
-- ✅ MCP wrapper created
-- ✅ Windsurf configuration updated
-- ✅ Dependencies added
-- ✅ Import tested successfully
-- ⏳ Awaiting Windsurf restart and testing
+-  MCP wrapper created
+-  Windsurf configuration updated
+-  Dependencies added
+-  Import tested successfully
+-  Awaiting Windsurf restart and testing
 
 ## References
 

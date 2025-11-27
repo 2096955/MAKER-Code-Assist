@@ -2,10 +2,10 @@
 
 ## Current Integration Status
 
-### ✅ Working Integrations
+###  Working Integrations
 
 #### 1. VS Code / Continue.dev (Recommended)
-**Status**: ✅ Configured and ready
+**Status**:  Configured and ready
 
 **Setup**:
 - Extension: Continue.dev (already installed)
@@ -25,7 +25,7 @@
 - Streaming responses
 
 #### 2. Open WebUI
-**Status**: ✅ Running
+**Status**:  Running
 
 **Setup**:
 - Docker container: `ghcr.io/open-webui/open-webui:main`
@@ -45,7 +45,7 @@
 - Streaming support
 
 #### 3. Direct API
-**Status**: ✅ Fully functional
+**Status**:  Fully functional
 
 **Usage**:
 ```bash
@@ -54,10 +54,10 @@ curl -X POST http://localhost:8080/v1/chat/completions \
   -d '{"model": "multi-agent", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
-### ⚠️ Limited Integration
+###  Limited Integration
 
 #### Windsurf / Cascade
-**Status**: ⚠️ MCP tools connected but cannot use as primary model
+**Status**:  MCP tools connected but cannot use as primary model
 
 **Issue**:
 - Windsurf Cascade only supports built-in models (SWE-1, Claude, GPT) as primary LLM

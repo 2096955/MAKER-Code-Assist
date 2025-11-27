@@ -42,13 +42,13 @@ class CodebaseMCPServer:
             raise ValueError(f"Path traversal attempt: {path}")
             
         if not file_path.exists():
-            return f"❌ File not found: {path}"
+            return f" File not found: {path}"
             
         try:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 return f.read()
         except Exception as e:
-            return f"❌ Error reading file: {e}"
+            return f" Error reading file: {e}"
     
     def analyze_codebase(self) -> Dict[str, Any]:
         """Return structure of codebase (files, folders, key exports)"""
@@ -127,7 +127,7 @@ class CodebaseMCPServer:
                     with open(path, 'r', encoding='utf-8', errors='ignore') as f:
                         content = f.read()
                         if query.lower() in content.lower():
-                            results.append(f"📄 {path.name}: Found '{query}'")
+                            results.append(f" {path.name}: Found '{query}'")
                 except:
                     pass
             elif path.is_dir():
@@ -136,11 +136,11 @@ class CodebaseMCPServer:
                         with open(doc_file, 'r', encoding='utf-8', errors='ignore') as f:
                             content = f.read()
                             if query.lower() in content.lower():
-                                results.append(f"📄 {doc_file.name}: Found '{query}'")
+                                results.append(f" {doc_file.name}: Found '{query}'")
                     except:
                         pass
         
-        return "\n".join(results) if results else f"❌ No docs found for '{query}'"
+        return "\n".join(results) if results else f" No docs found for '{query}'"
     
     def _find_references_python(self, file_path: Path, symbol: str) -> List[Tuple[int, str]]:
         """Find references in Python files using AST parsing"""
@@ -240,7 +240,7 @@ class CodebaseMCPServer:
                     except Exception:
                         pass
         
-        return "\n".join(refs) if refs else f"❌ No references found for '{symbol}'"
+        return "\n".join(refs) if refs else f" No references found for '{symbol}'"
     
     def git_diff(self, file: Optional[str] = None) -> str:
         """Get git diff (what changed recently)"""
@@ -254,13 +254,13 @@ class CodebaseMCPServer:
                 else:
                     result = subprocess.run(['git', 'diff', '--stat'], 
                                           capture_output=True, text=True, timeout=10)
-                return result.stdout if result.returncode == 0 else "❌ Git not available"
+                return result.stdout if result.returncode == 0 else " Git not available"
             finally:
                 os.chdir(original_cwd)
         except subprocess.TimeoutExpired:
-            return "❌ Git diff timed out"
+            return " Git diff timed out"
         except Exception as e:
-            return f"❌ Git diff error: {e}"
+            return f" Git diff error: {e}"
     
     def run_tests(self, test_file: Optional[str] = None) -> str:
         """Run test suite (returns exit code + output)"""
@@ -281,16 +281,16 @@ class CodebaseMCPServer:
                     elif (self.root / 'pytest.ini').exists() or list(self.root.glob('**/test_*.py')):
                         cmd = ['python', '-m', 'pytest', '-v']
                     else:
-                        return "❌ No test framework detected"
+                        return " No test framework detected"
                 
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
                 return f"Exit: {result.returncode}\n\n{result.stdout}\n{result.stderr}"
             finally:
                 os.chdir(original_cwd)
         except subprocess.TimeoutExpired:
-            return "❌ Tests timed out (>30s)"
+            return " Tests timed out (>30s)"
         except Exception as e:
-            return f"❌ Test error: {e}"
+            return f" Test error: {e}"
 
 
 # Initialize MCP server

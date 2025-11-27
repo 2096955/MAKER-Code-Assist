@@ -4,12 +4,12 @@
 
 This is the **production-ready blueprint** with:
 
-- ✅ Nemotron Nano 8B as Planner (not Qwen3-Omni)
-- ✅ Agentic RAG via MCP (not naive embeddings)
-- ✅ Parallel vLLM containers (actual parallelization)
-- ✅ Complete agent intelligence (MAKER prompts, objectives, awareness)
-- ✅ Streaming + chunked delivery
-- ✅ Agent memory + state coordination
+-  Nemotron Nano 8B as Planner (not Qwen3-Omni)
+-  Agentic RAG via MCP (not naive embeddings)
+-  Parallel vLLM containers (actual parallelization)
+-  Complete agent intelligence (MAKER prompts, objectives, awareness)
+-  Streaming + chunked delivery
+-  Agent memory + state coordination
 
 ---
 
@@ -37,7 +37,7 @@ Windsurf User Input
     • Images → Vision description (Gemma2-VL)
     • Text → Pass-through
     ↓ (all text now)
-[Planner Agent] (Nemotron Nano 8B) ⭐ KEY CHANGE
+[Planner Agent] (Nemotron Nano 8B)  KEY CHANGE
     • Receives: Task text + MCP-queried codebase context
     • Breaks down: Structured plan (JSON)
     • Queries: MCP tools (read_file, analyze_structure, search_docs)
@@ -100,7 +100,7 @@ huggingface-cli download google/gemma-2-2b-it \
   --revision main \
   --cache-dir ~/.cache/huggingface
 
-# 2. Nemotron Nano 8B (Planner) ⭐ CORRECT CHOICE
+# 2. Nemotron Nano 8B (Planner)  CORRECT CHOICE
 huggingface-cli download nvidia/Llama-3.1-Nemotron-Nano-8B-Instruct \
   --revision main \
   --cache-dir ~/.cache/huggingface
@@ -115,7 +115,7 @@ huggingface-cli download Qwen/Qwen-Coder-32B-Instruct \
   --revision main \
   --cache-dir ~/.cache/huggingface
 
-echo "✅ All models downloaded successfully"
+echo " All models downloaded successfully"
 ```
 
 ### vLLM Instance Configuration
@@ -171,12 +171,12 @@ enable_chunked_prefill: true
 
 ### Why Nemotron Nano (Not Qwen3-Omni)
 
-❌ **Qwen3-Omni 30B**: 
+ **Qwen3-Omni 30B**: 
 - 15GB RAM (wastes vision/audio encoders on text-only planning)
 - 41K context (too small for complex decomposition)
 - Slower (40-55 t/s)
 
-✅ **Nemotron Nano 8B**:
+ **Nemotron Nano 8B**:
 - **6GB RAM** (3x lighter, leaves room for other agents)
 - **128K context** (handles complex task specs + codebase overview)
 - **Explicitly agentic-trained** (RAG, tool calling, reasoning)
@@ -241,13 +241,13 @@ class CodebaseMCPServer:
             raise ValueError(f"Path traversal attempt: {path}")
             
         if not file_path.exists():
-            return f"❌ File not found: {path}"
+            return f" File not found: {path}"
             
         try:
             with open(file_path) as f:
                 return f.read()
         except Exception as e:
-            return f"❌ Error reading file: {e}"
+            return f" Error reading file: {e}"
     
     def analyze_codebase(self) -> str:
         """Return structure of codebase (files, folders, key exports)"""
@@ -295,15 +295,15 @@ class CodebaseMCPServer:
                 with open(path) as f:
                     content = f.read()
                     if query.lower() in content.lower():
-                        results.append(f"📄 {path.name}: Found '{query}'")
+                        results.append(f" {path.name}: Found '{query}'")
             elif path.is_dir():
                 for doc_file in path.rglob('*.md'):
                     with open(doc_file) as f:
                         content = f.read()
                         if query.lower() in content.lower():
-                            results.append(f"📄 {doc_file.name}: Found '{query}'")
+                            results.append(f" {doc_file.name}: Found '{query}'")
         
-        return "\n".join(results) if results else f"❌ No docs found for '{query}'"
+        return "\n".join(results) if results else f" No docs found for '{query}'"
     
     def find_references(self, symbol: str) -> str:
         """Find all references to a function/class/variable"""
@@ -328,7 +328,7 @@ class CodebaseMCPServer:
                     except:
                         pass
         
-        return "\n".join(refs) if refs else f"❌ No references found for '{symbol}'"
+        return "\n".join(refs) if refs else f" No references found for '{symbol}'"
     
     def git_diff(self, file: str = None) -> str:
         """Get git diff (what changed recently)"""
@@ -340,9 +340,9 @@ class CodebaseMCPServer:
             else:
                 result = subprocess.run(['git', 'diff', '--stat'], 
                                       capture_output=True, text=True)
-            return result.stdout if result.returncode == 0 else "❌ Git not available"
+            return result.stdout if result.returncode == 0 else " Git not available"
         except Exception as e:
-            return f"❌ Git diff error: {e}"
+            return f" Git diff error: {e}"
     
     def run_tests(self, test_file: str = None) -> str:
         """Run test suite (returns exit code + output)"""
@@ -362,9 +362,9 @@ class CodebaseMCPServer:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             return f"Exit: {result.returncode}\n\n{result.stdout}\n{result.stderr}"
         except subprocess.TimeoutExpired:
-            return "❌ Tests timed out (>30s)"
+            return " Tests timed out (>30s)"
         except Exception as e:
-            return f"❌ Test error: {e}"
+            return f" Test error: {e}"
 
 # MCP Server setup
 async def main():
@@ -462,10 +462,10 @@ if __name__ == "__main__":
 ### Key Difference from Naive RAG
 
 ```
-❌ Traditional RAG:
+ Traditional RAG:
 User Query → Embed → Search Vector DB → Retrieve Top-K → Stuff in Prompt → LLM
 
-✅ Agentic RAG (MCP):
+ Agentic RAG (MCP):
 User Query → Planner reads task → "I need to understand auth.py structure"
   → Calls MCP read_file("src/auth.py")
   → Gets exact file (0.1s, no embeddings)
@@ -624,7 +624,7 @@ Then after all chunks:
   "type": "test_results",
   "test_file": "tests/auth.test.py",
   "exit_code": 0,
-  "output": "✅ All tests passed"
+  "output": " All tests passed"
 }
 ```
 
@@ -935,13 +935,13 @@ class Orchestrator:
             if state.review_feedback.get("status") == "approved":
                 state.status = "complete"
                 state.save_to_redis(self.redis)
-                yield "\n✅ Code approved!\n"
+                yield "\n Code approved!\n"
                 break
             else:
-                yield f"\n⚠️ Iteration {state.iteration_count}: Feedback to Coder\n"
+                yield f"\n Iteration {state.iteration_count}: Feedback to Coder\n"
         
         if state.iteration_count >= max_iterations:
-            yield f"\n❌ Max iterations ({max_iterations}) reached. Escalating to Planner.\n"
+            yield f"\n Max iterations ({max_iterations}) reached. Escalating to Planner.\n"
             state.status = "failed"
             state.save_to_redis(self.redis)
         
@@ -1005,7 +1005,7 @@ services:
       timeout: 5s
       retries: 3
 
-  # Planner: Nemotron Nano 8B ⭐
+  # Planner: Nemotron Nano 8B 
   vllm-planner:
     image: vllm/vllm-openai:latest
     container_name: vllm-planner
@@ -1169,25 +1169,25 @@ networks:
 #!/bin/bash
 set -e
 
-echo "🚀 Starting Complete Multi-Agent Workflow Test"
+echo " Starting Complete Multi-Agent Workflow Test"
 
 # 1. Health Check All Services
-echo "✅ Checking service health..."
+echo " Checking service health..."
 sleep 5  # Give services time to start
 
 for port in 8000 8001 8002 8003 9001; do
   if curl -s http://localhost:$port/health > /dev/null 2>&1 || \
      curl -s http://localhost:$port/v1/models > /dev/null 2>&1; then
-    echo "  ✅ Service on port $port is healthy"
+    echo "   Service on port $port is healthy"
   else
-    echo "  ❌ Service on port $port is DOWN"
+    echo "   Service on port $port is DOWN"
     exit 1
   fi
 done
 
 # 2. Test MCP Server
 echo ""
-echo "🧪 Testing MCP Codebase Tools..."
+echo " Testing MCP Codebase Tools..."
 curl -s -X POST http://localhost:9001/api/mcp/tool \
   -H "Content-Type: application/json" \
   -d '{
@@ -1197,7 +1197,7 @@ curl -s -X POST http://localhost:9001/api/mcp/tool \
 
 # 3. Test Orchestrator Workflow
 echo ""
-echo "🧪 Testing Full Orchestration Workflow..."
+echo " Testing Full Orchestration Workflow..."
 curl -s -X POST http://localhost:8080/api/workflow \
   -H "Content-Type: application/json" \
   -d '{
@@ -1209,7 +1209,7 @@ curl -s -X POST http://localhost:8080/api/workflow \
     done
 
 echo ""
-echo "✅ All tests passed!"
+echo " All tests passed!"
 ```
 
 **File: `Dockerfile.orchestrator`**
@@ -1277,13 +1277,13 @@ bash tests/test_workflow.sh
 
 | Aspect | Before | **After** |
 |--------|--------|----------|
-| **Planner Model** | Qwen3-Omni (15GB, 41K context) | **Nemotron Nano (6GB, 128K context)** ✅ |
-| **RAG** | LocalRecall (reindex bottleneck) | **Agentic RAG via MCP (live queries)** ✅ |
-| **Parallelization** | Sequential execution | **Parallel vLLM containers (8000-8003)** ✅ |
-| **Agent Intelligence** | None (blind agents) | **Full MAKER prompts + objectives** ✅ |
-| **Streaming** | Batch responses | **Token-by-token + chunked code** ✅ |
-| **Memory** | No state coordination | **Redis + agent awareness** ✅ |
-| **Speed Optimization** | Slow sequential flow | **MAKER voting + plan caching** ✅ |
+| **Planner Model** | Qwen3-Omni (15GB, 41K context) | **Nemotron Nano (6GB, 128K context)**  |
+| **RAG** | LocalRecall (reindex bottleneck) | **Agentic RAG via MCP (live queries)**  |
+| **Parallelization** | Sequential execution | **Parallel vLLM containers (8000-8003)**  |
+| **Agent Intelligence** | None (blind agents) | **Full MAKER prompts + objectives**  |
+| **Streaming** | Batch responses | **Token-by-token + chunked code**  |
+| **Memory** | No state coordination | **Redis + agent awareness**  |
+| **Speed Optimization** | Slow sequential flow | **MAKER voting + plan caching**  |
 
 ---
 

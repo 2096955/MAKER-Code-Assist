@@ -16,16 +16,16 @@ The system was incorrectly described as using "MCP (Model Context Protocol)" whe
 ## The Reality
 
 ### Orchestrator (Port 8080)
-- ✅ OpenAI-compatible REST API
-- ✅ Endpoints: `/v1/models`, `/v1/chat/completions`
-- ✅ Uses HTTP REST, not JSON-RPC 2.0
-- ❌ NOT an MCP server
+-  OpenAI-compatible REST API
+-  Endpoints: `/v1/models`, `/v1/chat/completions`
+-  Uses HTTP REST, not JSON-RPC 2.0
+-  NOT an MCP server
 
 ### Codebase Server (Port 9001)
-- ✅ FastAPI REST server
-- ✅ Endpoints: `/api/mcp/tool`, `/api/mcp/tools`
-- ✅ Provides codebase tools via HTTP REST
-- ❌ NOT an MCP server (despite naming)
+-  FastAPI REST server
+-  Endpoints: `/api/mcp/tool`, `/api/mcp/tools`
+-  Provides codebase tools via HTTP REST
+-  NOT an MCP server (despite naming)
 
 ## Correct Configuration
 

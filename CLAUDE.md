@@ -53,7 +53,7 @@ Workflow: User → Preprocessor → Planner (with MCP queries) → Coder (MAKER 
 - `orchestrator/orchestrator.py` - Main workflow logic, MAKER voting, agent coordination
 - `orchestrator/api_server.py` - FastAPI REST/OpenAI-compatible API
 - `orchestrator/mcp_server.py` - Codebase tools (read_file, analyze_codebase, run_tests)
-- `prompts/*.md` - Agent system prompts with MAKER objectives
+- `agents/*.md` - Agent system prompts with MAKER objectives
 - `docker-compose.yml` - Docker services (MCP, Redis, Orchestrator only; llama.cpp runs native)
 - `scripts/start-llama-servers.sh` - Native Metal llama.cpp launcher
 
@@ -62,6 +62,6 @@ Workflow: User → Preprocessor → Planner (with MCP queries) → Coder (MAKER 
 - llama.cpp servers run natively (not Docker) for Metal GPU acceleration
 - Models stored in `models/` as GGUF Q6_K quantizations
 - Logs in `logs/llama-*.log`
-- Agent prompts define MAKER objectives, tools, constraints in `prompts/`
+- Agent prompts define MAKER objectives, tools, constraints in `agents/`
 - Redis persists task state at `task:{task_id}` keys
 - MCP server exposes codebase as tools (no embeddings, live queries)

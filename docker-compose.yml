@@ -51,12 +51,12 @@ services:
     # Ensure they're started with: bash scripts/start-llama-servers.sh
     volumes:
       - .:/app
-      - ./prompts:/app/prompts
+      - ./agents:/app/agents
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - CODEBASE_ROOT=/app
-      - PROMPTS_DIR=/app/prompts
+      - PROMPTS_DIR=/app/agents
       - PREPROCESSOR_URL=http://host.docker.internal:8000/v1/chat/completions
       - PLANNER_URL=http://host.docker.internal:8001/v1/chat/completions
       - CODER_URL=http://host.docker.internal:8002/v1/chat/completions

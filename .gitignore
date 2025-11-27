@@ -17,3 +17,9 @@ venv/
 
 # OS
 .DS_Store
+
+# Local tool configs (not part of project)
+.claude/
+.specify/
+prompts/
+docs/assets/

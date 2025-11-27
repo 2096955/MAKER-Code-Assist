@@ -157,18 +157,18 @@ You are a code generation agent. Your job is to write working code that solves t
 ```
 
 **Key Differences**:
-- ✅ Removed verbose repetition ("REPEATED 3x")
-- ✅ Removed MCP tool references (orchestrator handles this)
-- ✅ Added model-specific workflow language
-- ✅ Aligned with Devstral's "minimal changes" philosophy
-- ✅ More concise and direct
+-  Removed verbose repetition ("REPEATED 3x")
+-  Removed MCP tool references (orchestrator handles this)
+-  Added model-specific workflow language
+-  Aligned with Devstral's "minimal changes" philosophy
+-  More concise and direct
 
 ## Results
 
 **Testing Results** (from terminal 976-1019):
-- ✅ Simple code requests: Clean output, no JSON wrapping
-- ✅ Questions: Direct, helpful answers
-- ✅ Complex requests: Working code generation
+-  Simple code requests: Clean output, no JSON wrapping
+-  Questions: Direct, helpful answers
+-  Complex requests: Working code generation
 
 **Key Improvements**:
 1. **No JSON wrapping** - Prompts enforce markdown code blocks

@@ -10,50 +10,50 @@ This document distills key architectural insights from Claude Code's analysis an
 **Claude Code Insight**: Every operation designed for incremental updates
 
 **Applied to Our System**:
-- ✅ All agent calls use streaming (`stream=True`)
-- ✅ Orchestrator yields chunks as they arrive
-- ✅ UI receives real-time updates (Continue.dev, Open WebUI)
+-  All agent calls use streaming (`stream=True`)
+-  Orchestrator yields chunks as they arrive
+-  UI receives real-time updates (Continue.dev, Open WebUI)
 - 🔄 **Enhancement Opportunity**: Add backpressure management for slow consumers
 
 ### 2. Safety Through Layers
 **Claude Code Insight**: Multiple independent protection mechanisms that fail safely
 
 **Applied to Our System**:
-- ✅ Context truncation (2000 char limit in `generate_candidates`)
-- ✅ File size limits in codebase server (1MB max)
-- ✅ File count limits (500 max files)
-- ✅ Path traversal protection in MCP server
+-  Context truncation (2000 char limit in `generate_candidates`)
+-  File size limits in codebase server (1MB max)
+-  File count limits (500 max files)
+-  Path traversal protection in MCP server
 - 🔄 **Enhancement Opportunity**: Add permission system for tool execution
 
 ### 3. Model-Specific Prompt Design
 **Claude Code Insight**: Different models need different prompting approaches
 
 **Applied to Our System**:
-- ✅ **Concise prompts** - Smaller models (Gemma 2B, Qwen 1.5B) work better with direct instructions
-- ✅ **Model-tailored structure** - Each prompt matches the model's characteristics:
+-  **Concise prompts** - Smaller models (Gemma 2B, Qwen 1.5B) work better with direct instructions
+-  **Model-tailored structure** - Each prompt matches the model's characteristics:
   - Devstral 24B: Workflow-oriented, minimal changes philosophy
   - Nemotron 8B: Clear examples, plain text output
   - Qwen Coder 32B: Practical checklist style
-- ✅ **No verbose repetition** - Removed "CRITICAL RULES (REPEATED 3x)" - overkill for these models
-- ✅ **Orchestrator-handled context** - MCP tool references removed from prompts (orchestrator provides context)
+-  **No verbose repetition** - Removed "CRITICAL RULES (REPEATED 3x)" - overkill for these models
+-  **Orchestrator-handled context** - MCP tool references removed from prompts (orchestrator provides context)
 
 ### 4. Architecture Over Optimization
 **Claude Code Insight**: Performance through design, not tweaks
 
 **Applied to Our System**:
-- ✅ Parallel candidate generation (5 Coders)
-- ✅ Parallel voting (5 Voters)
-- ✅ Native llama.cpp Metal for 2-3x speed
-- ✅ Read-only tools can run in parallel (MCP queries)
-- ✅ Write operations serialize (code generation → review)
+-  Parallel candidate generation (5 Coders)
+-  Parallel voting (5 Voters)
+-  Native llama.cpp Metal for 2-3x speed
+-  Read-only tools can run in parallel (MCP queries)
+-  Write operations serialize (code generation → review)
 
 ### 5. Understanding LLM Psychology
 **Claude Code Insight**: Exploiting how models actually behave
 
 **Applied to Our System**:
-- ✅ Clear constraints prevent decision paralysis
-- ✅ Direct output format instructions ("Output code in markdown blocks")
-- ✅ Temperature variations for diversity (0.3-0.7 for candidates)
+-  Clear constraints prevent decision paralysis
+-  Direct output format instructions ("Output code in markdown blocks")
+-  Temperature variations for diversity (0.3-0.7 for candidates)
 - 🔄 **Enhancement**: Add negative examples ("Don't do X") for common mistakes
 
 ## Agent-Specific Insights
@@ -258,8 +258,8 @@ You evaluate code for correctness and security. Be practical, not pedantic.
 **Claude Code Insight**: Read-only tools run in parallel, write operations serialize
 
 **Applied to Our System**:
-- ✅ MAKER voting: 5 Coders in parallel
-- ✅ MAKER voting: 5 Voters in parallel
+-  MAKER voting: 5 Coders in parallel
+-  MAKER voting: 5 Voters in parallel
 - 🔄 **Enhancement**: Planner can query multiple MCP tools in parallel
 - 🔄 **Enhancement**: Coder can read multiple files in parallel
 
@@ -268,8 +268,8 @@ You evaluate code for correctness and security. Be practical, not pedantic.
 **Claude Code Insight**: Sophisticated error recovery strategies
 
 **Applied to Our System**:
-- ✅ JSON parsing fallback (regex extraction)
-- ✅ Context truncation on token overflow
+-  JSON parsing fallback (regex extraction)
+-  Context truncation on token overflow
 - 🔄 **Enhancement**: Retry failed agent calls with backoff
 - 🔄 **Enhancement**: Graceful degradation (fallback to simpler approach)
 
@@ -278,14 +278,14 @@ You evaluate code for correctness and security. Be practical, not pedantic.
 **Claude Code Insight**: Coordinate progress from multiple concurrent operations
 
 **Applied to Our System**:
-- ✅ MAKER voting shows vote counts
-- ✅ Streaming shows agent stages
+-  MAKER voting shows vote counts
+-  Streaming shows agent stages
 - 🔄 **Enhancement**: Rich progress reporting (percentage, ETA)
 - 🔄 **Enhancement**: Progress aggregation for parallel operations
 
 ## Implementation Status
 
-### ✅ Completed
+###  Completed
 1. **Model-Specific Prompt Design**: All prompts tailored to each model's characteristics
    - Gemma 2 2B (Preprocessor): Minimal, structured JSON output
    - Nemotron Nano 8B (Planner): Clear examples, plain text output
