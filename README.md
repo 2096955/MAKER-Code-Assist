@@ -53,7 +53,16 @@ bash tests/test_workflow.sh
 - Access: http://localhost:3000
 - Settings → Connections → OpenAI → Base URL: http://localhost:8080
 
-**Option 3: Direct API**
+**Option 3: OpenAI Codex CLI**
+```bash
+# Setup (one-time)
+bash codex/setup.sh
+
+# Run Codex with MAKER backend
+MAKER_API_KEY=local codex
+```
+
+**Option 4: Direct API**
 ```bash
 curl -X POST http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \

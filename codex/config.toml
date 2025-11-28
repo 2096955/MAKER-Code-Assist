@@ -1,0 +1,22 @@
+# Codex CLI configuration for MAKER multi-agent system
+# Copy this to ~/.codex/config.toml
+
+model_provider = "maker-local"
+model = "multi-agent"
+
+# Approval mode: "suggest", "auto-edit", or "full-auto"
+approval_mode = "suggest"
+
+# Sandbox mode for code execution
+sandbox = "macos-seatbelt"
+
+[model_providers.maker-local]
+name = "MAKER Local"
+base_url = "http://localhost:8080/v1"
+env_key = "MAKER_API_KEY"
+wire_api = "chat"
+
+# Network tuning for local inference (longer timeouts)
+request_max_retries = 3
+stream_max_retries = 3
+stream_idle_timeout_ms = 300000
