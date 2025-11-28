@@ -65,6 +65,11 @@ services:
       - MAKER_NUM_CANDIDATES=5
       - MAKER_VOTE_K=3
       - MCP_CODEBASE_URL=http://mcp-server:8000
+      - MAX_CONTEXT_TOKENS=32000
+      - RECENT_WINDOW_TOKENS=8000
+      - SUMMARY_CHUNK_SIZE=4000
+      - AGENT_TIMEOUT_MS=300000
+      - MCP_TIMEOUT_MS=30000
     restart: unless-stopped
     command: python -m orchestrator.api_server
 

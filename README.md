@@ -5,10 +5,11 @@ Applying Cognizant's MAKER paper to build a production-ready local multi-agent c
 ## Features
 
 - **MAKER Architecture**: Multi-Agent Knowledge-Enhanced Reasoning with parallel candidate generation and first-to-K voting
-- **4 Specialized Agents**: Preprocessor (Gemma2-2B), Planner (Nemotron Nano 8B), Coder (Devstral 24B), Reviewer (Qwen3-Coder 32B)
+- **5 Specialized Agents**: Preprocessor (Gemma2-2B), Planner (Nemotron Nano 8B), Coder (Devstral 24B), Reviewer (Qwen3-Coder 32B), Voter (Qwen2.5-1.5B)
 - **llama.cpp Metal Backend**: 2-3x faster than vLLM on Apple Silicon (18-25s end-to-end)
 - **Agentic RAG via MCP**: Live codebase queries via REST API (no embeddings, no reindexing)
 - **Parallel Execution**: All agents run simultaneously with Redis state coordination
+- **Context Compression**: Hierarchical compression with sliding window (recent messages in full, older messages summarized)
 - **OpenAI-Compatible API**: Works with Continue.dev, Open WebUI, or any OpenAI client
 
 ## Quick Start
@@ -160,6 +161,22 @@ This project implements Cognizant's MAKER (Multi-Agent Knowledge-Enhanced Reason
 
 **End-to-end**: 18-25 seconds for complex refactors  
 **Peak RAM**: ~40GB (leaves 88GB headroom on M4 Max 128GB)
+
+## Context Compression
+
+The system implements **hierarchical context compression** (similar to Claude's approach) to efficiently use full context windows:
+
+- **Recent messages** (default: 8000 tokens) - Kept in full for immediate context
+- **Older messages** - Automatically summarized by Preprocessor (Gemma2-2B) when context exceeds limits
+- **Auto-compression** - Triggers when total context approaches `MAX_CONTEXT_TOKENS` (default: 32000)
+- **Per-task history** - Each task maintains its own conversation history and compression state
+
+**Configuration** (via environment variables):
+- `MAX_CONTEXT_TOKENS=32000` - Total context budget before compression
+- `RECENT_WINDOW_TOKENS=8000` - Recent messages kept in full
+- `SUMMARY_CHUNK_SIZE=4000` - Chunk size for summarization
+
+This replaces the previous hard 2000-character truncation, allowing the system to use the full context window (128K for Planner/Coder, 256K for Reviewer) while managing long conversations efficiently.
 
 ## Documentation
 

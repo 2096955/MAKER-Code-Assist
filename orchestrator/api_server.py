@@ -37,6 +37,13 @@ class WorkflowRequest(BaseModel):
     input: str
     stream: bool = True
     task_id: Optional[str] = None
+    session_id: Optional[str] = None
+    resume: bool = False
+
+
+class CompactRequest(BaseModel):
+    session_id: str
+    instructions: Optional[str] = None
 
 
 # OpenAI-compatible request models
@@ -224,8 +231,86 @@ async def get_task_status(task_id: str):
         "iteration_count": state.iteration_count,
         "has_plan": state.plan is not None,
         "has_code": state.code is not None,
-        "has_review": state.review_feedback is not None
+        "has_review": state.review_feedback is not None,
+        "context_stats": state.context_stats
     }
+
+
+@app.get("/api/context/{session_id}")
+async def get_context_stats(session_id: str):
+    """Get context compression stats for a session (like /context command)"""
+    compressor = orchestrator._context_compressors.get(session_id)
+    if not compressor:
+        compressor = orchestrator.load_session(session_id)
+    if not compressor:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return compressor.get_stats()
+
+
+@app.post("/api/compact")
+async def compact_context(request: CompactRequest):
+    """Compact/compress context with optional custom instructions (like /compact command)"""
+    compressor = orchestrator._context_compressors.get(request.session_id)
+    if not compressor:
+        compressor = orchestrator.load_session(request.session_id)
+    if not compressor:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if request.instructions:
+        compressor.set_compact_instructions(request.instructions)
+    
+    before_stats = compressor.get_stats()
+    compressed = await compressor.compress_if_needed()
+    after_stats = compressor.get_stats()
+    
+    orchestrator.save_session(request.session_id)
+    
+    return {
+        "compressed": compressed,
+        "before": before_stats,
+        "after": after_stats
+    }
+
+
+@app.post("/api/clear/{session_id}")
+async def clear_session(session_id: str):
+    """Clear session context (like /clear command)"""
+    compressor = orchestrator._context_compressors.get(session_id)
+    if compressor:
+        compressor.clear()
+        orchestrator.save_session(session_id)
+        return {"status": "cleared", "session_id": session_id}
+    
+    orchestrator.redis.delete(f"session:{session_id}")
+    return {"status": "deleted", "session_id": session_id}
+
+
+@app.get("/api/sessions")
+async def list_sessions():
+    """List all saved sessions (like --resume picker)"""
+    return {"sessions": orchestrator.list_sessions()}
+
+
+@app.post("/api/session/{session_id}/resume")
+async def resume_session(session_id: str):
+    """Resume a saved session (like --continue or --resume)"""
+    compressor = orchestrator.load_session(session_id)
+    if not compressor:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {
+        "status": "resumed",
+        "session_id": session_id,
+        "stats": compressor.get_stats()
+    }
+
+
+@app.post("/api/session/{session_id}/save")
+async def save_session(session_id: str):
+    """Save current session to Redis"""
+    if session_id not in orchestrator._context_compressors:
+        raise HTTPException(status_code=404, detail="Active session not found")
+    orchestrator.save_session(session_id)
+    return {"status": "saved", "session_id": session_id}
 
 
 if __name__ == "__main__":
