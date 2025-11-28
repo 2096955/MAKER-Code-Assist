@@ -99,13 +99,29 @@ else
   echo "  Voter model not found (optional): models/qwen2.5-1.5b-instruct-q6_k.gguf"
 fi
 
+# GPT-OSS-20B (port 8005) - OpenAI open-weight model for Codex CLI
+if [ -f "models/gpt-oss-20b.gguf" ]; then
+  llama-server \
+    --model models/gpt-oss-20b.gguf \
+    --port 8005 \
+    --host 0.0.0.0 \
+    --n-gpu-layers 999 \
+    --ctx-size 32768 \
+    --parallel 4 \
+    > logs/llama-gpt-oss.log 2>&1 &
+  echo $! > /tmp/llama-gpt-oss.pid
+  echo " GPT-OSS-20B started (PID: $(cat /tmp/llama-gpt-oss.pid), port 8005)"
+else
+  echo "  GPT-OSS-20B model not found (optional): models/gpt-oss-20b.gguf"
+fi
+
 echo ""
 echo " Waiting 30 seconds for servers to initialize..."
 sleep 30
 
 echo ""
 echo " Server status:"
-for port in 8000 8001 8002 8003 8004; do
+for port in 8000 8001 8002 8003 8004 8005; do
     if curl -s http://localhost:$port/health > /dev/null 2>&1; then
         echo "   Port $port: Healthy"
     else

@@ -47,6 +47,7 @@ Port 8001: Planner (Nemotron Nano 8B) - Task decomposition, 128K context
 Port 8002: Coder (Devstral 24B) - Code generation with MAKER voting
 Port 8003: Reviewer (Qwen3-Coder 32B) - Validation, 256K context
 Port 8004: Voter (Qwen2.5-1.5B) - MAKER first-to-K voting
+Port 8005: GPT-OSS-20B (OpenAI open-weight) - Standalone Codex model
 Port 8080: Orchestrator API (FastAPI)
 Port 9001: MCP Server (Codebase tools)
 Port 6379: Redis (State management)

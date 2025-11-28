@@ -3,7 +3,7 @@
 
 echo "🛑 Stopping llama.cpp servers..."
 
-for pidfile in /tmp/llama-preprocessor.pid /tmp/llama-planner.pid /tmp/llama-coder.pid /tmp/llama-reviewer.pid; do
+for pidfile in /tmp/llama-preprocessor.pid /tmp/llama-planner.pid /tmp/llama-coder.pid /tmp/llama-reviewer.pid /tmp/llama-voter.pid /tmp/llama-gpt-oss.pid; do
     if [ -f "$pidfile" ]; then
         pid=$(cat "$pidfile")
         if kill -0 "$pid" 2>/dev/null; then
