@@ -22,7 +22,6 @@ venv/
 .claude/
 .specify/
 prompts/
-docs/assets/
 plan.plan.md
 GEMINI.md
 docs/correction-mcp-vs-openai.md

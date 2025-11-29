@@ -80,72 +80,7 @@ This project implements Cognizant's MAKER (Multi-Agent Knowledge-Enhanced Reason
 
 ## Architecture
 
-```
-+------------------+     +-------------------+     +------------------+
-|    IDE Client    |     |   Orchestrator    |     |   MCP Server     |
-|  (Continue.dev)  |     |   (FastAPI)       |     |   (Codebase)     |
-|                  |     |   Port 8080       |     |   Port 9001      |
-+--------+---------+     +--------+----------+     +--------+---------+
-         |                        |                         |
-         | OpenAI-compatible API  |    Agentic RAG queries  |
-         | POST /v1/chat/complete |    read_file, run_tests |
-         v                        v                         v
-+--------+------------------------+-------------------------+---------+
-|                                                                      |
-|                        MAKER REASONING PIPELINE                      |
-|                                                                      |
-|  +----------------+    +----------------+    +-------------------+   |
-|  |  1. PREPROCESS |    |   2. PLAN      |    |  3. GENERATE      |   |
-|  |                |    |                |    |     (MAKER)       |   |
-|  |  Gemma2-2B     |--->|  Nemotron 8B   |--->|                   |   |
-|  |  Port 8000     |    |  Port 8001     |    |  Coder generates  |   |
-|  |                |    |                |    |  N candidates in  |   |
-|  |  Audio/Image   |    |  Decomposes    |    |  parallel with    |   |
-|  |  to Text       |    |  task + queries|    |  varying temps    |   |
-|  +----------------+    |  MCP for       |    |                   |   |
-|                        |  codebase      |    |  Devstral 24B     |   |
-|                        +----------------+    |  Port 8002        |   |
-|                                              +--------+----------+   |
-|                                                       |              |
-|                                                       v              |
-|                                              +--------+----------+   |
-|                                              |  4. VOTE          |   |
-|                                              |     (MAKER)       |   |
-|                                              |                   |   |
-|                                              |  Qwen2.5-1.5B     |   |
-|                                              |  Port 8004        |   |
-|                                              |                   |   |
-|                                              |  First-to-K       |   |
-|                                              |  voting selects   |   |
-|                                              |  best candidate   |   |
-|                                              +--------+----------+   |
-|                                                       |              |
-|                                                       v              |
-|  +----------------+                          +--------+----------+   |
-|  |  6. OUTPUT     |                          |  5. REVIEW        |   |
-|  |                |<-------------------------|                   |   |
-|  |  Stream back   |       If approved        |  Qwen3-Coder 32B  |   |
-|  |  to IDE        |                          |  Port 8003        |   |
-|  |                |                          |                   |   |
-|  +----------------+                          |  Validates code,  |   |
-|         ^                                    |  runs tests,      |   |
-|         |                                    |  security check   |   |
-|         |         If rejected (max 3x)       +--------+----------+   |
-|         +--------------------------------------------+               |
-|                    Loop back to GENERATE                             |
-|                                                                      |
-+----------------------------------------------------------------------+
-                                   |
-                                   v
-                    +-----------------------------+
-                    |      Shared State (Redis)   |
-                    |         Port 6379           |
-                    |                             |
-                    |  - Task progress tracking   |
-                    |  - Iteration count          |
-                    |  - Plan/Code/Review state   |
-                    +-----------------------------+
-```
+![MAKER Reasoning Pipeline Architecture](docs/assets/maker-architecture.png)
 
 ### Workflow Summary
 
