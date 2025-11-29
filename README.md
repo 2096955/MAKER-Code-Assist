@@ -205,7 +205,7 @@ This replaces the previous hard 2000-character truncation, allowing the system t
 
 ## References
 
-- [MAKER Paper (Cognizant)](https://arxiv.org/abs/2410.02052) - Multi-Agent Knowledge-Enhanced Reasoning
+- [MAKER Paper](https://arxiv.org/abs/2511.09030) - Solving a Million-Step LLM Task with Zero Errors
 - [llama.cpp](https://github.com/ggerganov/llama.cpp) - Inference engine with Metal support
 
 ## License
