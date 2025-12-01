@@ -293,7 +293,24 @@ async def list_sessions():
 
 @app.post("/api/session/{session_id}/resume")
 async def resume_session(session_id: str):
-    """Resume a saved session (like --continue or --resume)"""
+    """
+    Resume a saved session (like --continue or --resume).
+    
+    If long-running support is enabled, uses progress tracking.
+    Otherwise, resumes context compression session.
+    """
+    # Check if long-running is enabled - use that if available
+    if orchestrator.enable_long_running and orchestrator.session_manager:
+        return StreamingResponse(
+            orchestrator.resume_session(session_id),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            }
+        )
+    
+    # Fallback to context compression session
     compressor = orchestrator.load_session(session_id)
     if not compressor:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -311,6 +328,23 @@ async def save_session(session_id: str):
         raise HTTPException(status_code=404, detail="Active session not found")
     orchestrator.save_session(session_id)
     return {"status": "saved", "session_id": session_id}
+
+
+@app.post("/api/session/{session_id}/checkpoint")
+async def checkpoint_session(session_id: str, feature_name: str):
+    """
+    Create a clean checkpoint for a completed feature.
+    
+    Verifies tests pass, creates git commit, and updates feature status.
+    """
+    if not orchestrator.enable_long_running:
+        raise HTTPException(
+            status_code=400,
+            detail="Long-running support not enabled. Set ENABLE_LONG_RUNNING=true"
+        )
+    
+    result = await orchestrator.checkpoint_session(session_id, feature_name)
+    return result
 
 
 if __name__ == "__main__":

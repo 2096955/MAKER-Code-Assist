@@ -50,12 +50,12 @@ services:
       timeout: 5s
       retries: 3
 
-  # Orchestrator (Main Service)
-  orchestrator:
+  # Orchestrator - High Mode (all 6 models, Reviewer validation)
+  orchestrator-high:
     build:
       context: .
       dockerfile: Dockerfile.orchestrator
-    container_name: orchestrator
+    container_name: orchestrator-high
     ports:
       - "8080:8080"
     depends_on:
@@ -63,13 +63,6 @@ services:
         condition: service_started
       redis:
         condition: service_healthy
-      # qdrant and phoenix are optional - don't block orchestrator startup
-      # qdrant:
-      #   condition: service_healthy
-      # phoenix:
-      #   condition: service_healthy
-    # Note: llama.cpp servers run natively, not in Docker
-    # Ensure they're started with: bash scripts/start-llama-servers.sh
     volumes:
       - .:/app
       - ./agents:/app/agents
@@ -85,8 +78,53 @@ services:
       - VOTER_URL=http://host.docker.internal:8004/v1/chat/completions
       - MAKER_NUM_CANDIDATES=5
       - MAKER_VOTE_K=3
-      # MAKER_MODE: "high" (with Reviewer, needs 128GB RAM) or "low" (Planner reflection, works on 40GB RAM)
       - MAKER_MODE=high
+      - MCP_CODEBASE_URL=http://mcp-server:8000
+      - QDRANT_URL=http://qdrant:6333
+      - EMBEDDING_MODEL=nomic-embed-text-v1.5
+      - RAG_COLLECTION_NAME=codebase_docs
+      - RAG_INDEX_PATH=/app/data/rag_indexes/codebase.index
+      - MAX_CONTEXT_TOKENS=32000
+      - RECENT_WINDOW_TOKENS=8000
+      - SUMMARY_CHUNK_SIZE=4000
+      - AGENT_TIMEOUT_MS=300000
+      - MCP_TIMEOUT_MS=30000
+      - PHOENIX_ENDPOINT=http://phoenix:6006/v1/traces
+      - ENABLE_LONG_RUNNING=true
+      - TRIGGER_ENABLED=false
+      - EE_MODE=true
+    restart: unless-stopped
+    command: python -m orchestrator.api_server
+
+  # Orchestrator - Low Mode (5 models, Planner reflection validation)
+  orchestrator-low:
+    build:
+      context: .
+      dockerfile: Dockerfile.orchestrator
+    container_name: orchestrator-low
+    ports:
+      - "8081:8080"
+    depends_on:
+      mcp-server:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - ./agents:/app/agents
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CODEBASE_ROOT=/app
+      - PROMPTS_DIR=/app/agents
+      - PREPROCESSOR_URL=http://host.docker.internal:8000/v1/chat/completions
+      - PLANNER_URL=http://host.docker.internal:8001/v1/chat/completions
+      - CODER_URL=http://host.docker.internal:8002/v1/chat/completions
+      - REVIEWER_URL=http://host.docker.internal:8003/v1/chat/completions
+      - VOTER_URL=http://host.docker.internal:8004/v1/chat/completions
+      - MAKER_NUM_CANDIDATES=5
+      - MAKER_VOTE_K=3
+      - MAKER_MODE=low
       - MCP_CODEBASE_URL=http://mcp-server:8000
       - QDRANT_URL=http://qdrant:6333
       - EMBEDDING_MODEL=nomic-embed-text-v1.5

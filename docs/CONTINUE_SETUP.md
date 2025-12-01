@@ -9,9 +9,15 @@ This guide shows how to use MAKER with the Continue VSCode extension in both Hig
 
 ## Configuration
 
-### Option 1: Continue config.json (Recommended)
+### Option 1: Use Project Config (Easiest)
 
-Create or edit `~/.continue/config.json`:
+The project includes a `.continuerc.json` file with both MakerCode modes pre-configured. Continue will automatically detect and use this file.
+
+**Just open the project in VSCode and the models will be available!**
+
+### Option 2: Manual Global Config
+
+If you prefer to configure Continue globally, create or edit `~/.continue/config.json`:
 
 ```json
 {
@@ -28,7 +34,7 @@ Create or edit `~/.continue/config.json`:
       "title": "MakerCode - Low (40GB RAM)",
       "provider": "openai",
       "model": "multi-agent",
-      "apiBase": "http://localhost:8080/v1",
+      "apiBase": "http://localhost:8081/v1",
       "apiKey": "local",
       "description": "5 models, Planner reflection, works on 40GB RAM"
     }
@@ -46,53 +52,30 @@ Create or edit `~/.continue/config.json`:
 }
 ```
 
-**To switch modes:**
+**Note**: With the dual-orchestrator setup, both High and Low modes run simultaneously on different ports. Simply select the model you want in Continue - no need to restart services!
 
-1. Stop current services:
+## Starting the System
+
+Start both orchestrators (recommended):
+
 ```bash
-bash scripts/stop-llama-servers.sh
-docker compose down
+# Start both High (8080) and Low (8081) mode orchestrators
+bash scripts/start-maker.sh all
 ```
 
-2. Set mode and restart:
+Or start only one mode:
+
 ```bash
-# For High mode (128GB RAM)
-export MAKER_MODE=high
-bash scripts/start-llama-servers.sh
-docker compose up -d
+# Start only High mode (port 8080)
+bash scripts/start-maker.sh high
 
-# OR for Low mode (40GB RAM)
-export MAKER_MODE=low
-bash scripts/start-llama-servers.sh
-docker compose up -d
-```
-
-3. In Continue, select the model that matches your mode
-4. The orchestrator will automatically use the correct validation method
-
-### Option 2: Environment Variable in docker-compose.yml
-
-Edit `docker-compose.yml`:
-
-```yaml
-services:
-  orchestrator:
-    environment:
-      # Change this line:
-      - MAKER_MODE=low  # or high
-```
-
-Then:
-```bash
-bash scripts/stop-llama-servers.sh
-export MAKER_MODE=low  # Must match docker-compose.yml
-bash scripts/start-llama-servers.sh
-docker compose up -d
+# Start only Low mode (port 8081)
+bash scripts/start-maker.sh low
 ```
 
 ## Verification
 
-Check that the correct mode is active:
+Check that both orchestrators are running:
 
 ```bash
 # Check which models are running

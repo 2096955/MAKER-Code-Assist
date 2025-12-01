@@ -7,6 +7,11 @@ MCP Server: Exposes codebase as tools for agents
 - find_references(symbol): Find where a function/class is used
 - git_diff(file): Get latest changes
 - run_tests(test_file): Execute test suite
+- rag_search(query, top_k): Semantic search in codebase (if RAG index exists)
+- rag_query(question, top_k): RAG query with LLM generation (if RAG index exists)
+
+RAG tools are agentic - agents call them when needed, not automatically injected.
+If RAG index doesn't exist, tools simply won't appear in /api/mcp/tools list.
 """
 
 import os
@@ -334,50 +339,78 @@ async def health():
 @app.get("/api/mcp/tools")
 async def list_tools():
     """List available MCP tools"""
-    return {
-        "tools": [
-            {
-                "name": "read_file",
-                "description": "Read a file from the codebase",
-                "parameters": {
-                    "path": {"type": "string", "description": "File path relative to codebase"}
-                }
-            },
-            {
-                "name": "analyze_codebase",
-                "description": "Get codebase structure (files, languages, LOC)",
-                "parameters": {}
-            },
-            {
-                "name": "search_docs",
-                "description": "Search documentation for a topic",
-                "parameters": {
-                    "query": {"type": "string"}
-                }
-            },
-            {
-                "name": "find_references",
-                "description": "Find all references to a symbol (function/class/var)",
-                "parameters": {
-                    "symbol": {"type": "string"}
-                }
-            },
-            {
-                "name": "git_diff",
-                "description": "Get recent git changes",
-                "parameters": {
-                    "file": {"type": "string", "description": "Optional: specific file", "required": False}
-                }
-            },
-            {
-                "name": "run_tests",
-                "description": "Run test suite",
-                "parameters": {
-                    "test_file": {"type": "string", "description": "Optional: specific test file", "required": False}
-                }
+    tools = [
+        {
+            "name": "read_file",
+            "description": "Read a file from the codebase",
+            "parameters": {
+                "path": {"type": "string", "description": "File path relative to codebase"}
             }
-        ]
-    }
+        },
+        {
+            "name": "analyze_codebase",
+            "description": "Get codebase structure (files, languages, LOC)",
+            "parameters": {}
+        },
+        {
+            "name": "search_docs",
+            "description": "Search documentation for a topic",
+            "parameters": {
+                "query": {"type": "string"}
+            }
+        },
+        {
+            "name": "find_references",
+            "description": "Find all references to a symbol (function/class/var)",
+            "parameters": {
+                "symbol": {"type": "string"}
+            }
+        },
+        {
+            "name": "git_diff",
+            "description": "Get recent git changes",
+            "parameters": {
+                "file": {"type": "string", "description": "Optional: specific file", "required": False}
+            }
+        },
+        {
+            "name": "run_tests",
+            "description": "Run test suite",
+            "parameters": {
+                "test_file": {"type": "string", "description": "Optional: specific test file", "required": False}
+            }
+        }
+    ]
+    
+    # Add RAG tools if RAG is available
+    try:
+        from orchestrator.rag_service_faiss import RAGServiceFAISS
+        import os
+        index_path = os.getenv("RAG_INDEX_PATH", "data/rag_indexes/codebase.index")
+        if os.path.exists(index_path):
+            tools.extend([
+                {
+                    "name": "rag_search",
+                    "description": "Semantic search in codebase using RAG. Returns relevant code snippets with similarity scores.",
+                    "parameters": {
+                        "query": {"type": "string", "description": "Search query"},
+                        "top_k": {"type": "integer", "description": "Number of results (default: 5)", "required": False}
+                    }
+                },
+                {
+                    "name": "rag_query",
+                    "description": "RAG query: Retrieve relevant context and generate an answer using LLM. Use when you need a comprehensive answer based on codebase knowledge.",
+                    "parameters": {
+                        "question": {"type": "string", "description": "Question to answer"},
+                        "top_k": {"type": "integer", "description": "Number of documents to retrieve (default: 5)", "required": False}
+                    }
+                }
+            ])
+    except (ImportError, Exception):
+        # RAG not available - tools list stays as is
+        pass
+    
+    return {"tools": tools}
 
 
 @app.post("/api/mcp/tool")
@@ -414,6 +447,21 @@ async def call_tool(request: ToolRequest):
             result = mcp_server.run_tests(request.args.get("test_file"))
             return {"result": result}
         
+        # RAG tools (agentic - only called when agents need them)
+        elif request.tool == "rag_search":
+            if "query" not in request.args:
+                raise HTTPException(status_code=400, detail="Missing 'query' parameter")
+            top_k = request.args.get("top_k", 5)
+            result = await _call_rag_search(request.args["query"], top_k)
+            return {"result": result}
+        
+        elif request.tool == "rag_query":
+            if "question" not in request.args:
+                raise HTTPException(status_code=400, detail="Missing 'question' parameter")
+            top_k = request.args.get("top_k", 5)
+            result = await _call_rag_query(request.args["question"], top_k)
+            return {"result": result}
+        
         else:
             raise HTTPException(status_code=400, detail=f"Unknown tool: {request.tool}")
     
@@ -421,6 +469,59 @@ async def call_tool(request: ToolRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Tool execution error: {str(e)}")
+
+
+# RAG tool implementations (lazy-loaded, optional)
+_rag_service_cache = None
+
+def _get_rag_service():
+    """Lazy load RAG service if available"""
+    global _rag_service_cache
+    if _rag_service_cache is None:
+        try:
+            from orchestrator.rag_service_faiss import RAGServiceFAISS
+            import os
+            index_path = os.getenv("RAG_INDEX_PATH", "data/rag_indexes/codebase.index")
+            if os.path.exists(index_path):
+                _rag_service_cache = RAGServiceFAISS(
+                    embedding_model=os.getenv("EMBEDDING_MODEL", "nomic-embed-text-v1.5"),
+                    index_path=index_path
+                )
+        except (ImportError, Exception) as e:
+            # RAG not available - return None
+            _rag_service_cache = False  # Mark as checked
+    return _rag_service_cache if _rag_service_cache else None
+
+async def _call_rag_search(query: str, top_k: int = 5) -> str:
+    """RAG search tool - called by agents when needed"""
+    rag = _get_rag_service()
+    if not rag:
+        return " RAG not available. Index codebase first: python3 scripts/index_codebase.py"
+    
+    try:
+        results = rag.search(query, top_k=top_k)
+        if not results:
+            return f" No relevant documents found for: {query}"
+        
+        formatted = f"Found {len(results)} relevant documents:\n\n"
+        for i, doc in enumerate(results, 1):
+            formatted += f"[{i}] {doc['metadata'].get('file_path', 'unknown')} (relevance: {doc['score']:.3f})\n"
+            formatted += f"{doc['text'][:400]}...\n\n"
+        return formatted
+    except Exception as e:
+        return f" RAG search error: {str(e)}"
+
+async def _call_rag_query(question: str, top_k: int = 5) -> str:
+    """RAG query tool - called by agents when they need comprehensive answers"""
+    rag = _get_rag_service()
+    if not rag:
+        return " RAG not available. Index codebase first: python3 scripts/index_codebase.py"
+    
+    try:
+        answer = await rag.query(question, top_k=top_k)
+        return answer
+    except Exception as e:
+        return f" RAG query error: {str(e)}"
 
 
 # Convenience endpoints

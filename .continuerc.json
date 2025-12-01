@@ -1,0 +1,73 @@
+{
+  "models": [
+    {
+      "title": "MakerCode - High (128GB RAM)",
+      "provider": "openai",
+      "model": "multi-agent",
+      "apiBase": "http://localhost:8080/v1",
+      "apiKey": "local",
+      "description": "All 6 models, Reviewer validation, highest quality"
+    },
+    {
+      "title": "MakerCode - Low (40GB RAM)",
+      "provider": "openai",
+      "model": "multi-agent",
+      "apiBase": "http://localhost:8081/v1",
+      "apiKey": "local",
+      "description": "5 models, Planner reflection, works on 40GB RAM"
+    }
+  ],
+  "tabAutocompleteModel": {
+    "title": "Disabled",
+    "provider": "free-trial",
+    "model": "AUTODETECT"
+  },
+  "contextProviders": [
+    {
+      "name": "code",
+      "params": {}
+    },
+    {
+      "name": "docs",
+      "params": {}
+    },
+    {
+      "name": "diff",
+      "params": {}
+    },
+    {
+      "name": "terminal",
+      "params": {}
+    },
+    {
+      "name": "problems",
+      "params": {}
+    },
+    {
+      "name": "folder",
+      "params": {}
+    },
+    {
+      "name": "codebase",
+      "params": {}
+    }
+  ],
+  "slashCommands": [
+    {
+      "name": "share",
+      "description": "Export the current chat session to markdown"
+    },
+    {
+      "name": "cmd",
+      "description": "Generate a shell command"
+    },
+    {
+      "name": "commit",
+      "description": "Generate a git commit message"
+    }
+  ],
+  "allowAnonymousTelemetry": false,
+  "embeddingsProvider": {
+    "provider": "free-trial"
+  }
+}

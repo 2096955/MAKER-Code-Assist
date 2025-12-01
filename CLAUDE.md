@@ -21,72 +21,72 @@ See [docs/MAKER_MODES.md](docs/MAKER_MODES.md) for detailed comparison.
 # Download models (~50GB GGUF files)
 bash scripts/download-models.sh
 
-# === MakerCode - High Mode (default, needs 128GB RAM) ===
-export MAKER_MODE=high
-bash scripts/start-llama-servers.sh  # Starts all 6 models including Reviewer
-docker compose up -d
+# === Start MAKER system ===
+# Start both High and Low mode orchestrators (recommended)
+bash scripts/start-maker.sh all
 
-# === MakerCode - Low Mode (works on 40GB RAM) ===
-export MAKER_MODE=low
-bash scripts/start-llama-servers.sh  # Starts 5 models, skips Reviewer
-docker compose restart orchestrator  # Uses Planner reflection instead
+# OR start only High mode (needs all 6 models including Reviewer)
+bash scripts/start-maker.sh high
 
-# === Switch modes (stop → change → restart) ===
-bash scripts/stop-llama-servers.sh
-export MAKER_MODE=low  # or high
-bash scripts/start-llama-servers.sh
-docker compose restart orchestrator
+# OR start only Low mode (5 models, no Reviewer needed)
+bash scripts/start-maker.sh low
 
-# === Standard operations ===
-# Stop llama.cpp servers
+# === Stop services ===
+docker compose down
 bash scripts/stop-llama-servers.sh
 
-# Run workflow test
-bash tests/test_workflow.sh
-
-# Test health endpoints
+# === Test endpoints ===
+# High mode (port 8080)
 curl http://localhost:8080/health
-
-# Test OpenAI-compatible API
 curl -X POST http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model": "multi-agent", "messages": [{"role": "user", "content": "Hello"}]}'
 
+# Low mode (port 8081)
+curl http://localhost:8081/health
+curl -X POST http://localhost:8081/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "multi-agent", "messages": [{"role": "user", "content": "Hello"}]}'
+
+# === Monitoring ===
 # View llama.cpp logs
 tail -f logs/llama-*.log
 
-# Check server health individually
-for port in 8000 8001 8002 8003 8004; do curl -s http://localhost:$port/health; done
+# View orchestrator logs
+docker compose logs orchestrator-high --tail=50
+docker compose logs orchestrator-low --tail=50
+
+# Check server health
+for port in 8000 8001 8002 8003 8004 8005; do curl -s http://localhost:$port/health; done
 ```
 
 ## Architecture
 
 ```
-# MakerCode - High Mode (all 6 models, ~128GB RAM)
+# llama.cpp Servers (Native Metal, shared by both orchestrators)
 Port 8000: Preprocessor (Gemma2-2B) - Audio/Image → Text
 Port 8001: Planner (Nemotron Nano 8B) - Task decomposition
 Port 8002: Coder (Devstral 24B) - Code generation with MAKER voting
-Port 8003: Reviewer (Qwen Coder 32B) - Validation & testing
+Port 8003: Reviewer (Qwen Coder 32B) - Validation & testing (used by High mode only)
 Port 8004: Voter (Qwen2.5-1.5B) - MAKER first-to-K voting
 Port 8005: GPT-OSS-20B (OpenAI open-weight) - Standalone Codex model
 
-# MakerCode - Low Mode (5 models, ~40-50GB RAM)
-Port 8000: Preprocessor (Gemma2-2B) - Audio/Image → Text
-Port 8001: Planner (Nemotron Nano 8B) - Task decomposition + reflection validation
-Port 8002: Coder (Devstral 24B) - Code generation with MAKER voting
-Port 8003: (skipped) - Planner handles validation via reflection
-Port 8004: Voter (Qwen2.5-1.5B) - MAKER first-to-K voting
-Port 8005: GPT-OSS-20B (OpenAI open-weight) - Standalone Codex model
+# Orchestrators (Docker, separate instances for each mode)
+Port 8080: Orchestrator High (MAKER_MODE=high, uses Reviewer for validation)
+Port 8081: Orchestrator Low (MAKER_MODE=low, uses Planner reflection for validation)
 
 # Supporting Services
-Port 8080: Orchestrator API (FastAPI)
 Port 9001: MCP Server (Codebase tools)
-Port 6379: Redis (State management)
+Port 6379: Redis (State management, shared)
+Port 6333: Qdrant (Vector DB, shared)
+Port 6006: Phoenix (Observability, shared)
 ```
 
-Workflow (High mode): User → Preprocessor → Planner (with MCP queries) → Coder (MAKER parallel candidates) → Voter → Reviewer → iterate or complete
+**Workflow (High mode - port 8080)**: User → Preprocessor → Planner (with MCP queries) → Coder (MAKER parallel candidates) → Voter → Reviewer → iterate or complete
 
-Workflow (Low mode): User → Preprocessor → Planner (with MCP queries) → Coder (MAKER parallel candidates) → Voter → Planner Reflection → iterate or complete
+**Workflow (Low mode - port 8081)**: User → Preprocessor → Planner (with MCP queries) → Coder (MAKER parallel candidates) → Voter → Planner Reflection → iterate or complete
+
+**Key advantage**: Both orchestrators run simultaneously, sharing the same backend models. Switch between modes instantly in Continue by selecting a different model configuration.
 
 ## Key Files
 
