@@ -38,10 +38,11 @@ The MAKER system supports two operational modes to accommodate different hardwar
 
 ### Setup
 ```bash
-# Use default High mode
-export MAKER_MODE=high
-bash scripts/start-llama-servers.sh
-docker compose up -d
+# Start High mode orchestrator (port 8080)
+bash scripts/start-maker.sh high
+
+# Or start both High and Low modes simultaneously
+bash scripts/start-maker.sh all
 ```
 
 ## Low Mode
@@ -69,17 +70,14 @@ docker compose up -d
 
 ### Setup
 ```bash
-# Enable Low mode
-export MAKER_MODE=low
-bash scripts/start-llama-servers.sh
-docker compose up -d
+# Start Low mode orchestrator (port 8081)
+bash scripts/start-maker.sh low
+
+# Or start both High and Low modes simultaneously
+bash scripts/start-maker.sh all
 ```
 
-Or set in `docker-compose.yml`:
-```yaml
-environment:
-  - MAKER_MODE=low
-```
+**Note**: With the dual-orchestrator architecture, both modes can run simultaneously on different ports. No need to switch - just select the model you want in Continue!
 
 ## Why Planner Reflection Works
 
@@ -126,7 +124,36 @@ The Planner is the **perfect** validator in Low mode because:
 
 ## Switching Between Modes
 
-### Method 1: Environment Variable
+**With the dual-orchestrator architecture, you don't need to switch modes!** Both High and Low orchestrators run simultaneously on different ports. Simply select the model you want in Continue:
+
+- **MakerCode - High** → Port 8080 (Reviewer validation)
+- **MakerCode - Low** → Port 8081 (Planner reflection)
+
+### Starting Both Modes (Recommended)
+
+```bash
+# Start both High and Low orchestrators simultaneously
+bash scripts/start-maker.sh all
+```
+
+This gives you instant switching - just select a different model in Continue, no restarts needed!
+
+### Starting Only One Mode
+
+If you only want one mode running:
+
+```bash
+# High mode only (port 8080)
+bash scripts/start-maker.sh high
+
+# Low mode only (port 8081)
+bash scripts/start-maker.sh low
+```
+
+### Legacy Method (Single Orchestrator)
+
+If you're using the old single-orchestrator setup, you can still switch modes:
+
 ```bash
 # High mode
 export MAKER_MODE=high
@@ -141,21 +168,7 @@ bash scripts/start-llama-servers.sh
 docker compose restart orchestrator
 ```
 
-### Method 2: docker-compose.yml
-```yaml
-# Edit docker-compose.yml
-environment:
-  - MAKER_MODE=low  # or high
-```
-
-Then:
-```bash
-docker compose down
-bash scripts/stop-llama-servers.sh
-export MAKER_MODE=low  # Match docker-compose.yml
-bash scripts/start-llama-servers.sh
-docker compose up -d
-```
+**Note**: The dual-orchestrator setup (recommended) eliminates the need for mode switching entirely.
 
 ## RAM Breakdown
 
@@ -189,31 +202,34 @@ Based on MAKER paper estimates:
 | Iteration rate | Higher quality, more iterations | Faster iterations |
 | False positives (approved bad code) | Very low | Low |
 
-## Example: Using Low Mode
+## Example: Using Both Modes
 
 ```bash
-# 1. Set environment
-export MAKER_MODE=low
-
-# 2. Start only 5 models (no Reviewer)
-bash scripts/start-llama-servers.sh
+# 1. Start both High and Low orchestrators
+bash scripts/start-maker.sh all
 
 # Output shows:
-# 🎚️  MAKER_MODE: low
-#    Low mode: Skipping Reviewer (uses Planner reflection instead)
-#    RAM requirement: ~40-50GB (vs 128GB in High mode)
+# ✅ Orchestrator High (8080): Running
+# ✅ Orchestrator Low (8081): Running
 #
-#  Preprocessor started (PID: 12345, port 8000)
-#  Planner started (PID: 12346, port 8001)
-#  Coder started (PID: 12347, port 8002)
-#  Reviewer skipped (Low mode uses Planner reflection)
-#  Voter started (PID: 12348, port 8004)
+# 📊 Both modes available:
+#    High Mode (port 8080): Reviewer validation, ~128GB RAM
+#    Low Mode (port 8081): Planner reflection, ~40-50GB RAM
 
-# 3. Start orchestrator in Low mode
-docker compose up -d
+# 2. In Continue extension:
+#    - Select "MakerCode - High" → Uses port 8080 (Reviewer)
+#    - Select "MakerCode - Low" → Uses port 8081 (Planner reflection)
+#    - Switch instantly, no restarts needed!
+```
 
-# 4. Use as normal
-# The system will automatically use Planner reflection instead of Reviewer
+### Example: Using Only Low Mode
+
+```bash
+# Start only Low mode orchestrator
+bash scripts/start-maker.sh low
+
+# In Continue, select "MakerCode - Low (40GB RAM)"
+# System uses Planner reflection for validation
 ```
 
 ## Troubleshooting

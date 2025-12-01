@@ -5,7 +5,8 @@ Applying Cognizant's MAKER paper to build a production-ready local multi-agent c
 ## Features
 
 - **MAKER Architecture**: Multi-Agent Knowledge-Enhanced Reasoning with parallel candidate generation and first-to-K voting
-- **5 Specialized Agents**: Preprocessor (Gemma2-2B), Planner (Nemotron Nano 8B), Coder (Devstral 24B), Reviewer (Qwen3-Coder 32B), Voter (Qwen2.5-1.5B)
+- **5-6 Specialized Agents**: Preprocessor (Gemma2-2B), Planner (Nemotron Nano 8B), Coder (Devstral 24B), Reviewer (Qwen3-Coder 32B, High mode only), Voter (Qwen2.5-1.5B)
+- **Dual Orchestrator Architecture**: High mode (port 8080) and Low mode (port 8081) run simultaneously for instant switching
 - **llama.cpp Metal Backend**: 2-3x faster than vLLM on Apple Silicon (18-25s end-to-end)
 - **Agentic RAG via MCP**: Live codebase queries via REST API (no embeddings, no reindexing)
 - **Parallel Execution**: All agents run simultaneously with Redis state coordination
@@ -22,49 +23,61 @@ bash scripts/download-models.sh
 
 Downloads all GGUF models (~50GB) to `./models/`
 
-### 2. Start llama.cpp Servers (Native Metal)
+### 2. Start MAKER System
 
 ```bash
-bash scripts/start-llama-servers.sh
+# Start both High and Low mode orchestrators (recommended)
+bash scripts/start-maker.sh all
+
+# OR start only High mode (needs all 6 models including Reviewer)
+bash scripts/start-maker.sh high
+
+# OR start only Low mode (5 models, no Reviewer needed)
+bash scripts/start-maker.sh low
 ```
 
-### 3. Start Docker Services
-
-```bash
-docker compose up -d
-```
-
-Starts MCP Server + Redis + Orchestrator
+This starts:
+- llama.cpp servers (native Metal acceleration)
+- Docker services (MCP, Redis, Qdrant, Phoenix)
+- Orchestrator(s) on port 8080 (High) and/or 8081 (Low)
 
 ### 4. Verify Health
 
 ```bash
+# Check both orchestrators
+curl http://localhost:8080/health  # High mode
+curl http://localhost:8081/health  # Low mode
+
+# Or run full test suite
 bash tests/test_workflow.sh
 ```
 
-### 5. Connect to IDE
+### 3. Connect to IDE
 
 **Option 1: VS Code / Continue.dev (Recommended)**
 - Install Continue.dev extension
-- Config: `~/.continue/config.json`
+- Open this project in VSCode - Continue config is auto-detected from `.continuerc.json`
 - Usage: Cmd+L → Select model → Chat
+- Two models available:
+  - **MakerCode - High (128GB RAM)** → Port 8080 (Reviewer validation)
+  - **MakerCode - Low (40GB RAM)** → Port 8081 (Planner reflection)
+- Switch modes instantly by selecting a different model - no restarts needed!
+
+See [README_CONTINUE.md](README_CONTINUE.md) for complete setup guide.
 
 **Option 2: Open WebUI**
 - Access: http://localhost:3000
-- Settings → Connections → OpenAI → Base URL: http://localhost:8080
+- Settings → Connections → OpenAI → Base URL: http://localhost:8080 (High) or http://localhost:8081 (Low)
 
-**Option 3: OpenAI Codex CLI**
+**Option 3: Direct API**
 ```bash
-# Setup (one-time)
-bash codex/setup.sh
-
-# Run Codex with MAKER backend
-MAKER_API_KEY=local codex
-```
-
-**Option 4: Direct API**
-```bash
+# High mode (port 8080)
 curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "multi-agent", "messages": [{"role": "user", "content": "Hello"}]}'
+
+# Low mode (port 8081)
+curl -X POST http://localhost:8081/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model": "multi-agent", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
@@ -84,6 +97,7 @@ This project implements Cognizant's MAKER (Multi-Agent Knowledge-Enhanced Reason
 
 ### Workflow Summary
 
+**High Mode (Port 8080):**
 1. **IDE** (Continue.dev/Open WebUI) sends request via OpenAI-compatible API
 2. **Preprocessor** converts any audio/image input to text
 3. **Planner** queries MCP for codebase context, decomposes task into subtasks
@@ -92,6 +106,9 @@ This project implements Cognizant's MAKER (Multi-Agent Knowledge-Enhanced Reason
 6. **Reviewer** validates winning code, runs tests, checks security
 7. If rejected, loops back to Coder (max 3 iterations)
 8. **Output** streams back to IDE
+
+**Low Mode (Port 8081):**
+Same workflow, but step 6 uses **Planner Reflection** instead of Reviewer (validates code against the plan it created, saves ~40GB RAM)
 
 ## Performance
 

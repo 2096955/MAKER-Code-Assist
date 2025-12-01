@@ -2,9 +2,11 @@
 
 ## The Error You're Seeing
 
-"Connection error" means the Orchestrator API (port 8080) is not running.
+"Connection error" means the Orchestrator API is not running. With the dual-orchestrator setup, you need both:
+- High mode orchestrator (port 8080)
+- Low mode orchestrator (port 8081)
 
-## Quick Fix (3 Steps)
+## Quick Fix (2 Steps)
 
 ### Step 1: Start Docker Desktop
 
@@ -14,30 +16,26 @@ open -a Docker
 
 Wait for Docker to fully start (check the Docker icon in menu bar).
 
-### Step 2: Start Docker Services
+### Step 2: Start MAKER System
 
 ```bash
 cd /Users/anthonylui/BreakingWind
-docker compose up -d
+
+# Start both High and Low mode orchestrators (recommended)
+bash scripts/start-maker.sh all
+
+# OR start only High mode
+bash scripts/start-maker.sh high
+
+# OR start only Low mode
+bash scripts/start-maker.sh low
 ```
 
 This starts:
-- Redis (port 6379)
-- MCP Server (port 9001)  
-- Orchestrator API (port 8080)
-
-### Step 3: Start llama.cpp Servers
-
-```bash
-bash scripts/start-llama-servers.sh
-```
-
-This starts:
-- Preprocessor (port 8000)
-- Planner (port 8001)
-- Coder (port 8002)
-- Reviewer (port 8003)
-- Voter (port 8004)
+- llama.cpp servers (native Metal acceleration)
+- Docker services (Redis, MCP Server, Qdrant, Phoenix)
+- Orchestrator High (port 8080) - uses Reviewer validation
+- Orchestrator Low (port 8081) - uses Planner reflection
 
 ## Verify Everything is Running
 
@@ -46,9 +44,14 @@ This starts:
 ./check_services.sh
 
 # Or manually:
-curl http://localhost:8080/health  # Orchestrator
+curl http://localhost:8080/health  # Orchestrator High
+curl http://localhost:8081/health  # Orchestrator Low
 curl http://localhost:8000/health  # Preprocessor
 redis-cli ping                      # Redis
+
+# Check which mode each orchestrator is using
+docker compose logs orchestrator-high | grep "MAKER Mode"
+docker compose logs orchestrator-low | grep "MAKER Mode"
 ```
 
 ## If Docker Won't Start
@@ -98,10 +101,10 @@ bash scripts/download-models.sh
 ## One-Command Startup (After Docker is Running)
 
 ```bash
-# Start everything
-docker compose up -d && \
-bash scripts/start-llama-servers.sh && \
-sleep 10 && \
-./check_services.sh
+# Start everything (both High and Low modes)
+bash scripts/start-maker.sh all
+
+# Wait a moment, then verify
+sleep 10 && ./check_services.sh
 ```
 
