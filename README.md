@@ -95,6 +95,8 @@ This project implements Cognizant's MAKER (Multi-Agent Knowledge-Enhanced Reason
 
 ![MAKER Reasoning Pipeline Architecture](docs/assets/maker-architecture.png)
 
+*Note: The diagram above shows the core MAKER workflow. The current deployment uses a dual-orchestrator architecture (see [CHANGELOG.md](CHANGELOG.md) for architecture evolution).*
+
 ### Workflow Summary
 
 **High Mode (Port 8080):**
