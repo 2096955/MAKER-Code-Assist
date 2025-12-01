@@ -2,6 +2,10 @@
 
 Applying Cognizant's MAKER paper to build a production-ready local multi-agent coding system optimized for Apple Silicon (M4 Max) with llama.cpp Metal backend.
 
+## Acknowledgments
+
+This project is built using open-source models and tools. See [CONTRIBUTORS.md](CONTRIBUTORS.md) for a complete list of contributors including Cursor, Gemini, Qwen Coder, and NVIDIA Nemo.
+
 ## Features
 
 - **MAKER Architecture**: Multi-Agent Knowledge-Enhanced Reasoning with parallel candidate generation and first-to-K voting
