@@ -34,6 +34,22 @@ services:
       timeout: 3s
       retries: 3
 
+  # Qdrant (Vector Database for RAG)
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant-vector-db
+    ports:
+      - "6333:6333"  # REST API
+      - "6334:6334"  # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
   # Orchestrator (Main Service)
   orchestrator:
     build:
@@ -47,6 +63,11 @@ services:
         condition: service_started
       redis:
         condition: service_healthy
+      # qdrant and phoenix are optional - don't block orchestrator startup
+      # qdrant:
+      #   condition: service_healthy
+      # phoenix:
+      #   condition: service_healthy
     # Note: llama.cpp servers run natively, not in Docker
     # Ensure they're started with: bash scripts/start-llama-servers.sh
     volumes:
@@ -64,17 +85,48 @@ services:
       - VOTER_URL=http://host.docker.internal:8004/v1/chat/completions
       - MAKER_NUM_CANDIDATES=5
       - MAKER_VOTE_K=3
+      # MAKER_MODE: "high" (with Reviewer, needs 128GB RAM) or "low" (Planner reflection, works on 40GB RAM)
+      - MAKER_MODE=high
       - MCP_CODEBASE_URL=http://mcp-server:8000
+      - QDRANT_URL=http://qdrant:6333
+      - EMBEDDING_MODEL=nomic-embed-text-v1.5
+      - RAG_COLLECTION_NAME=codebase_docs
+      - RAG_INDEX_PATH=/app/data/rag_indexes/codebase.index
       - MAX_CONTEXT_TOKENS=32000
       - RECENT_WINDOW_TOKENS=8000
       - SUMMARY_CHUNK_SIZE=4000
       - AGENT_TIMEOUT_MS=300000
       - MCP_TIMEOUT_MS=30000
+      - PHOENIX_ENDPOINT=http://phoenix:6006/v1/traces
+      - ENABLE_LONG_RUNNING=true
+      - TRIGGER_ENABLED=false
+      - EE_MODE=true
     restart: unless-stopped
     command: python -m orchestrator.api_server
 
+  # Phoenix (Observability & Evaluation)
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    container_name: phoenix-observability
+    ports:
+      - "6006:6006"  # UI
+      - "4317:4317"  # OTLP gRPC
+      - "4318:4318"  # OTLP HTTP
+    environment:
+      - PHOENIX_WORKING_DIR=/data
+    volumes:
+      - phoenix_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6006/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
 volumes:
   redis_data:
+  qdrant_data:
+  phoenix_data:
 
 networks:
   default:

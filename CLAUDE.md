@@ -6,20 +6,40 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Localised Code Assistant on Apple Silicon** - Applying Cognizant's MAKER (Multi-Agent Knowledge-Enhanced Reasoning) paper to build a local multi-agent coding system optimized for Apple Silicon (M4 Max 128GB) using llama.cpp Metal backend. Five AI agents (Preprocessor, Planner, Coder, Voter, Reviewer) with parallel candidate generation and first-to-K voting, orchestrated via FastAPI with Redis state management and MCP-based codebase access.
 
+## MAKER Modes
+
+The system supports two modes for different RAM configurations:
+
+- **MakerCode - High** (default): All 6 models, ~128GB RAM, highest quality
+- **MakerCode - Low**: 5 models (no Reviewer), ~40-50GB RAM, Planner reflection validation
+
+See [docs/MAKER_MODES.md](docs/MAKER_MODES.md) for detailed comparison.
+
 ## Commands
 
 ```bash
 # Download models (~50GB GGUF files)
 bash scripts/download-models.sh
 
-# Start llama.cpp servers natively (Metal acceleration)
-bash scripts/start-llama-servers.sh
+# === MakerCode - High Mode (default, needs 128GB RAM) ===
+export MAKER_MODE=high
+bash scripts/start-llama-servers.sh  # Starts all 6 models including Reviewer
+docker compose up -d
 
+# === MakerCode - Low Mode (works on 40GB RAM) ===
+export MAKER_MODE=low
+bash scripts/start-llama-servers.sh  # Starts 5 models, skips Reviewer
+docker compose restart orchestrator  # Uses Planner reflection instead
+
+# === Switch modes (stop → change → restart) ===
+bash scripts/stop-llama-servers.sh
+export MAKER_MODE=low  # or high
+bash scripts/start-llama-servers.sh
+docker compose restart orchestrator
+
+# === Standard operations ===
 # Stop llama.cpp servers
 bash scripts/stop-llama-servers.sh
-
-# Start Docker services (MCP, Redis, Orchestrator)
-docker compose up -d
 
 # Run workflow test
 bash tests/test_workflow.sh
@@ -42,18 +62,31 @@ for port in 8000 8001 8002 8003 8004; do curl -s http://localhost:$port/health; 
 ## Architecture
 
 ```
+# MakerCode - High Mode (all 6 models, ~128GB RAM)
 Port 8000: Preprocessor (Gemma2-2B) - Audio/Image → Text
-Port 8001: Planner (Nemotron Nano 8B) - Task decomposition, 128K context
+Port 8001: Planner (Nemotron Nano 8B) - Task decomposition
 Port 8002: Coder (Devstral 24B) - Code generation with MAKER voting
-Port 8003: Reviewer (Qwen3-Coder 32B) - Validation, 256K context
+Port 8003: Reviewer (Qwen Coder 32B) - Validation & testing
 Port 8004: Voter (Qwen2.5-1.5B) - MAKER first-to-K voting
 Port 8005: GPT-OSS-20B (OpenAI open-weight) - Standalone Codex model
+
+# MakerCode - Low Mode (5 models, ~40-50GB RAM)
+Port 8000: Preprocessor (Gemma2-2B) - Audio/Image → Text
+Port 8001: Planner (Nemotron Nano 8B) - Task decomposition + reflection validation
+Port 8002: Coder (Devstral 24B) - Code generation with MAKER voting
+Port 8003: (skipped) - Planner handles validation via reflection
+Port 8004: Voter (Qwen2.5-1.5B) - MAKER first-to-K voting
+Port 8005: GPT-OSS-20B (OpenAI open-weight) - Standalone Codex model
+
+# Supporting Services
 Port 8080: Orchestrator API (FastAPI)
 Port 9001: MCP Server (Codebase tools)
 Port 6379: Redis (State management)
 ```
 
-Workflow: User → Preprocessor → Planner (with MCP queries) → Coder (MAKER parallel candidates) → Voter → Reviewer → iterate or complete
+Workflow (High mode): User → Preprocessor → Planner (with MCP queries) → Coder (MAKER parallel candidates) → Voter → Reviewer → iterate or complete
+
+Workflow (Low mode): User → Preprocessor → Planner (with MCP queries) → Coder (MAKER parallel candidates) → Voter → Planner Reflection → iterate or complete
 
 ## Key Files
 

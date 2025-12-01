@@ -14,6 +14,30 @@ from dataclasses import dataclass, asdict, field
 from enum import Enum
 from pathlib import Path
 
+# EE Memory imports
+from orchestrator.ee_memory import HierarchicalMemoryNetwork
+from orchestrator.agent_memory import AgentMemoryNetwork
+from orchestrator.melodic_detector import MelodicLineDetector
+
+# EE Planner (Spec-compliant)
+from orchestrator.ee_planner import EEPlannerAgent, EnhancedSubtask
+from orchestrator.ee_world_model import CodebaseWorldModel
+from orchestrator.mcp_client_wrapper import MCPClientWrapper
+
+# Observability imports
+from orchestrator.observability import get_tracer, trace_agent_call, trace_maker_voting
+
+# Long-running support imports
+from orchestrator.progress_tracker import ProgressTracker
+from orchestrator.session_manager import SessionManager
+from orchestrator.checkpoint_manager import CheckpointManager
+
+# Skills framework imports
+from orchestrator.skill_loader import SkillLoader
+from orchestrator.skill_matcher import SkillMatcher
+from orchestrator.skill_extractor import SkillExtractor
+from orchestrator.skill_registry import SkillRegistry
+
 
 @dataclass
 class ConversationMessage:
@@ -240,6 +264,9 @@ class AgentName(Enum):
     REVIEWER = "reviewer"
     VOTER = "voter"
 
+# Export AgentName for use in other modules
+__all__ = ['AgentName', 'Orchestrator', 'ContextCompressor', 'TaskState']
+
 @dataclass
 class TaskState:
     """Redis-backed task state"""
@@ -284,7 +311,10 @@ class Orchestrator:
         
         self.num_candidates = int(os.getenv("MAKER_NUM_CANDIDATES", "5"))
         self.vote_k = int(os.getenv("MAKER_VOTE_K", "3"))
-        
+
+        # MAKER mode: "high" (with Reviewer, needs 128GB RAM) or "low" (Planner reflection, works on 40GB RAM)
+        self.maker_mode = os.getenv("MAKER_MODE", "high").lower()
+
         # MCP server URL
         self.mcp_url = mcp_url or os.getenv("MCP_CODEBASE_URL", "http://localhost:9001")
         
@@ -303,6 +333,76 @@ class Orchestrator:
         # Configurable timeouts
         self.agent_timeout = float(os.getenv("AGENT_TIMEOUT_MS", "300000")) / 1000
         self.mcp_timeout = float(os.getenv("MCP_TIMEOUT_MS", "30000")) / 1000
+        
+        # Note: RAG is now agentic - exposed as MCP tools (rag_search, rag_query)
+        # Agents call it when needed, no automatic injection
+        # RAG_ENABLED env var is no longer used - RAG tools appear in /api/mcp/tools if index exists
+        
+        # EE Mode: Enable/disable Expositional Engineering planner
+        self.ee_mode = os.getenv("EE_MODE", "true").lower() == "true"
+        
+        # EE Memory: Shared codebase world model (simplified version)
+        codebase_root = os.getenv("CODEBASE_ROOT", ".")
+        self.world_model = HierarchicalMemoryNetwork(
+            codebase_path=codebase_root,
+            compression_ratios=[0.3, 0.2, 0.15],
+            preservation_thresholds=[0.85, 0.75, 0.70]
+        )
+        
+        # Initialize world model if not already done
+        self._initialize_world_model()
+        
+        # Per-agent memory networks
+        self.agent_memories = {
+            agent: AgentMemoryNetwork(agent, self.world_model)
+            for agent in AgentName
+        }
+        
+        # EE Planner (Spec-compliant) - lazy initialization
+        self._ee_planner = None
+        self._mcp_client_wrapper = None
+        
+        # Long-running support (Phase 1)
+        self.enable_long_running = os.getenv("ENABLE_LONG_RUNNING", "false").lower() == "true"
+        if self.enable_long_running:
+            workspace_dir = os.getenv("WORKSPACE_DIR", "./workspace")
+            workspace_path = Path(workspace_dir)
+            self.progress_tracker = ProgressTracker(workspace_path)
+            self.session_manager = SessionManager(self.progress_tracker)
+            self.checkpoint_manager = CheckpointManager(self.progress_tracker, self.redis)
+            print("[Orchestrator] Long-running support enabled")
+        else:
+            self.progress_tracker = None
+            self.session_manager = None
+            self.checkpoint_manager = None
+        
+        # Skills framework (Phase 2)
+        self.enable_skills = os.getenv("ENABLE_SKILLS", "false").lower() == "true"
+        if self.enable_skills:
+            skills_dir = os.getenv("SKILLS_DIR", "./skills")
+            skills_path = Path(skills_dir)
+            self.skill_loader = SkillLoader(skills_path)
+            # RAG service for skills (use existing RAG if available, or create new)
+            # For now, skills use simple keyword matching (RAG optional)
+            self.skill_matcher = SkillMatcher(self.skill_loader, rag_service=None)
+            # Index skills in RAG if RAG is available
+            # Note: RAG integration can be added later when RAG service is initialized
+            print("[Orchestrator] Skills framework enabled")
+        else:
+            self.skill_loader = None
+            self.skill_matcher = None
+        
+        # Skill learning (Phase 3)
+        self.enable_skill_learning = os.getenv("ENABLE_SKILL_LEARNING", "false").lower() == "true"
+        if self.enable_skill_learning and self.enable_skills:
+            skills_dir = os.getenv("SKILLS_DIR", "./skills")
+            skills_path = Path(skills_dir)
+            self.skill_extractor = SkillExtractor(skills_path, self.skill_loader)
+            self.skill_registry = SkillRegistry(self.redis)
+            print("[Orchestrator] Skill learning enabled")
+        else:
+            self.skill_extractor = None
+            self.skill_registry = None
     
     def _load_system_prompt(self, agent_name: str) -> str:
         """Load system prompt from prompts/ directory"""
@@ -311,6 +411,152 @@ class Orchestrator:
             with open(prompt_file) as f:
                 return f.read()
         return ""
+    
+    def _get_ee_planner(self) -> Optional[EEPlannerAgent]:
+        """Get or create EE Planner (lazy initialization)"""
+        if not self.ee_mode:
+            return None
+        
+        if self._ee_planner is None:
+            try:
+                # Create MCP client wrapper
+                if self._mcp_client_wrapper is None:
+                    self._mcp_client_wrapper = MCPClientWrapper(mcp_url=self.mcp_url)
+                
+                # Initialize EE Planner
+                codebase_root = os.getenv("CODEBASE_ROOT", ".")
+                self._ee_planner = EEPlannerAgent(
+                    codebase_path=codebase_root,
+                    mcp_client=self._mcp_client_wrapper,
+                    model_name="nemotron-nano-8b"
+                )
+                print("[Orchestrator] EE Planner initialized")
+            except Exception as e:
+                print(f"[Orchestrator] Failed to initialize EE Planner: {e}")
+                print("[Orchestrator] Falling back to standard planner")
+                self.ee_mode = False
+                return None
+        
+        return self._ee_planner
+    
+    async def _plan_with_ee(self, task_description: str) -> Dict:
+        """
+        Plan task using EE Planner (Spec-compliant)
+        Uses actual MAKER Planner LLM with narrative-aware prompts
+        Returns plan in format compatible with orchestrator
+        """
+        ee_planner = self._get_ee_planner()
+        if not ee_planner:
+            return None
+        
+        try:
+            # Get enhanced subtasks from EE Planner (uses actual LLM)
+            enhanced_subtasks = await ee_planner.plan_task_async(
+                task_description,
+                self,
+                AgentName.PLANNER
+            )
+            
+            # Convert EnhancedSubtask to orchestrator format
+            plan_items = []
+            for i, subtask in enumerate(enhanced_subtasks):
+                plan_items.append({
+                    "id": f"ee_subtask_{i+1}",
+                    "description": subtask.description,
+                    "assigned_to": "coder",
+                    "target_modules": subtask.target_modules,
+                    "preserves_narratives": subtask.relevant_narratives,
+                    "dependencies": subtask.dependencies,
+                    "warnings": subtask.warnings,
+                    "confidence": subtask.confidence,
+                    "preserves_patterns": subtask.preserves_patterns
+                })
+            
+            return {
+                "plan": plan_items,
+                "ee_mode": True,
+                "narrative_count": len(set(
+                    narrative 
+                    for subtask in enhanced_subtasks 
+                    for narrative in subtask.relevant_narratives
+                )),
+                "average_confidence": sum(s.confidence for s in enhanced_subtasks) / len(enhanced_subtasks) if enhanced_subtasks else 0.0
+            }
+        except Exception as e:
+            print(f"[Orchestrator] EE Planner error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    def _initialize_world_model(self):
+        """Initialize world model by indexing codebase"""
+        # Check if already initialized (could load from cache)
+        if self.world_model.stats["l0_count"] > 0:
+            return
+        
+        # Index codebase files
+        codebase_root = Path(os.getenv("CODEBASE_ROOT", "."))
+        excluded = {
+            '.git', 'node_modules', 'dist', 'build', '__pycache__', '.specify', '.claude',
+            'models', '.venv', 'venv', 'env', '.env', 'vendor', 'target',
+            '.docker', 'docker-data', '.cache', '.npm', '.yarn', 'coverage',
+            '.idea', '.vscode', '.DS_Store', 'tmp', 'temp', 'logs',
+            'weaviate_data', 'redis_data', 'postgres_data', '.genkit'
+        }
+        
+        codebase_files = {}
+        max_files = 100  # Limit for initial indexing
+        
+        for root, dirs, files in os.walk(codebase_root):
+            dirs[:] = [d for d in dirs if d not in excluded]
+            
+            for file in files:
+                if len(codebase_files) >= max_files:
+                    break
+                
+                if file.startswith('.'):
+                    continue
+                
+                file_path = Path(root) / file
+                if file_path.suffix in ['.py', '.js', '.ts', '.jsx', '.tsx', '.md']:
+                    try:
+                        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                            content = f.read()
+                            if len(content) < 1_000_000:  # 1MB limit
+                                rel_path = str(file_path.relative_to(codebase_root))
+                                codebase_files[rel_path] = content
+                    except Exception:
+                        pass
+        
+        # Add files to L₀
+        for file_path, content in codebase_files.items():
+            l0_id = self.world_model.add_code_file(file_path, content)
+            # Extract entities to L₁
+            self.world_model.extract_entities(l0_id)
+        
+        # Detect patterns (L₂)
+        l1_ids = list(self.world_model.l1_nodes.keys())
+        if l1_ids:
+            self.world_model.detect_patterns(l1_ids)
+        
+        # Detect melodic lines (L₃)
+        if self.world_model.l2_nodes:
+            detector = MelodicLineDetector(persistence_threshold=0.7)
+            melodic_lines = detector.detect_from_codebase(
+                codebase_files,
+                self.world_model.l0_nodes,
+                self.world_model.l1_nodes,
+                self.world_model.l2_nodes
+            )
+            
+            # Add to world model
+            for ml in melodic_lines:
+                self.world_model.l3_melodic_lines[ml.id] = ml
+        
+        print(f"[EE Memory] Initialized: {self.world_model.stats['l0_count']} files, "
+              f"{self.world_model.stats['l1_count']} entities, "
+              f"{self.world_model.stats['l2_count']} patterns, "
+              f"{self.world_model.stats['l3_count']} melodic lines")
     
     def get_context_compressor(self, task_id: str) -> ContextCompressor:
         """Get or create a context compressor for a task"""
@@ -384,18 +630,29 @@ class Orchestrator:
         except Exception as e:
             return f" MCP query failed: {str(e)}"
     
+    @trace_agent_call("preprocessor", "gemma-2-2b")
     async def preprocess_input(self, task_id: str, user_input: str) -> str:
         """Convert audio/image/text to clean text"""
-        # For now, assume text input
-        # In full system: detect type, call appropriate preprocessor
-        # Return JSON format for consistency
-        return json.dumps({
-            "type": "preprocessed_input",
-            "original_type": "text",
-            "preprocessed_text": user_input,
-            "confidence": 1.0,
-            "metadata": {}
-        })
+        tracer = get_tracer()
+        with tracer.start_as_current_span("preprocess") as span:
+            span.set_attribute("input_type", "text")  # Detect actual type
+            span.set_attribute("input_length", len(user_input))
+            
+            # Basic preprocessing (multi-modal conversion via Gemma2-2B)
+            # For now, assume text input
+            # In full system: detect type, call appropriate preprocessor
+            # RAG is NOT automatically applied here - agents call it as a tool when needed
+            
+            # Return JSON format for consistency
+            result = json.dumps({
+                "type": "preprocessed_input",
+                "original_type": "text",
+                "preprocessed_text": user_input,
+                "confidence": 1.0,
+                "metadata": {}
+            })
+            span.set_attribute("output_length", len(result))
+            return result
     
     async def call_agent_sync(self, agent: AgentName, system_prompt: str,
                               user_message: str, temperature: float = 0.7) -> str:
@@ -423,73 +680,127 @@ class Orchestrator:
     async def generate_candidates(self, task_desc: str, context: str, n: int = 5, 
                                     task_id: Optional[str] = None) -> list:
         """Generate N candidate solutions in parallel (MAKER decomposition)"""
-        coder_prompt = self._load_system_prompt("coder")
-        
-        if task_id:
-            compressor = self.get_context_compressor(task_id)
-            compressed_context = await compressor.get_context()
-            stats = compressor.get_stats()
-            print(f"[DEBUG] Context compression stats: {stats}")
-        else:
-            compressed_context = context
-        
-        coder_request = f"""Task: {task_desc}
-Context: {compressed_context}
+        tracer = get_tracer()
+        with tracer.start_as_current_span("maker.generate_candidates") as span:
+            span.set_attribute("maker.num_candidates", n)
+            span.set_attribute("maker.temperature_range", f"0.3-{0.3 + (n-1)*0.1}")
+            
+            coder_prompt = self._load_system_prompt("coder")
+            
+            # Get narrative-aware context for Coder
+            coder_memory = self.agent_memories[AgentName.CODER]
+            narrative_context = coder_memory.get_context_for_agent(task_desc)
+            
+            if task_id:
+                compressor = self.get_context_compressor(task_id)
+                compressed_context = await compressor.get_context()
+                stats = compressor.get_stats()
+                print(f"[DEBUG] Context compression stats: {stats}")
+                # Combine narrative context with compressed context
+                full_context = f"{narrative_context}\n\n[Conversation History]\n{compressed_context}"
+            else:
+                full_context = narrative_context if narrative_context else context
+            
+            coder_request = f"""Task: {task_desc}
+Context: {full_context}
 
 Generate code implementation.
 """
-        print(f"[DEBUG] generate_candidates: task_desc={len(task_desc)} chars, context={len(compressed_context)} chars, request={len(coder_request)} chars")
-        tasks = [
-            self.call_agent_sync(AgentName.CODER, coder_prompt, coder_request, temperature=0.3 + (i * 0.1))
-            for i in range(n)
-        ]
-        candidates = await asyncio.gather(*tasks)
-        return [c for c in candidates if not c.startswith("Error:")]
+            print(f"[DEBUG] generate_candidates: task_desc={len(task_desc)} chars, context={len(full_context)} chars, request={len(coder_request)} chars")
+            tasks = [
+                self.call_agent_sync(AgentName.CODER, coder_prompt, coder_request, temperature=0.3 + (i * 0.1))
+                for i in range(n)
+            ]
+            candidates = await asyncio.gather(*tasks)
+            valid_candidates = [c for c in candidates if not c.startswith("Error:")]
+            span.set_attribute("maker.valid_candidates", len(valid_candidates))
+            return valid_candidates
     
     async def maker_vote(self, candidates: list, task_desc: str, k: int = 3) -> tuple:
         """MAKER first-to-K voting on candidates. Returns (winner, vote_counts)"""
-        if len(candidates) == 0:
-            return None, {}
-        if len(candidates) == 1:
-            return candidates[0], {"A": 1}
-        
-        voter_prompt = self._load_system_prompt("voter")
-        labels = "ABCDE"[:len(candidates)]
-        
-        candidate_text = "\n\n".join([
-            f"Candidate {labels[i]}:\n```\n{c[:2000]}\n```" for i, c in enumerate(candidates)
-        ])
-        
-        vote_request = f"""Task: {task_desc}
+        tracer = get_tracer()
+        span = trace_maker_voting(candidates, k)
+        with span:
+            if len(candidates) == 0:
+                span.set_attribute("maker.winner", "none")
+                return None, {}
+            if len(candidates) == 1:
+                span.set_attribute("maker.winner", "A")
+                span.set_attribute("maker.vote_distribution", json.dumps({"A": 1}))
+                return candidates[0], {"A": 1}
+            
+            # Get narrative-aware context for Voter
+            voter_memory = self.agent_memories[AgentName.VOTER]
+            narrative_context = voter_memory.get_context_for_agent(task_desc)
+            
+            voter_prompt = self._load_system_prompt("voter")
+            labels = "ABCDE"[:len(candidates)]
+            
+            candidate_text = "\n\n".join([
+                f"Candidate {labels[i]}:\n```\n{c[:2000]}\n```" for i, c in enumerate(candidates)
+            ])
+            
+            vote_request = f"""Task: {task_desc}
 
+Context (Narrative Awareness):
+{narrative_context}
+
+Candidates:
 {candidate_text}
 
-Vote for the BEST candidate. Reply with only: {', '.join(labels)}
+Vote for the BEST candidate that preserves narrative coherence. Reply with only: {', '.join(labels)}
 """
-        
-        num_voters = 2 * k - 1
-        vote_tasks = [
-            self.call_agent_sync(AgentName.VOTER, voter_prompt, vote_request, temperature=0.1)
-            for _ in range(num_voters)
-        ]
-        
-        votes = await asyncio.gather(*vote_tasks)
-        
-        vote_counts = {label: 0 for label in labels}
-        for vote in votes:
-            vote = vote.strip().upper()
-            if vote and vote[0] in labels:
-                vote_counts[vote[0]] += 1
-        
-        winner_label = max(vote_counts, key=vote_counts.get)
-        winner_idx = labels.index(winner_label)
-        
-        return candidates[winner_idx], vote_counts
+            
+            num_voters = 2 * k - 1
+            vote_tasks = [
+                self.call_agent_sync(AgentName.VOTER, voter_prompt, vote_request, temperature=0.1)
+                for _ in range(num_voters)
+            ]
+            
+            votes = await asyncio.gather(*vote_tasks)
+            
+            vote_counts = {label: 0 for label in labels}
+            for vote in votes:
+                vote = vote.strip().upper()
+                if vote and vote[0] in labels:
+                    vote_counts[vote[0]] += 1
+            
+            winner_label = max(vote_counts, key=vote_counts.get)
+            winner_idx = labels.index(winner_label)
+            
+            span.set_attribute("maker.winner", winner_label)
+            span.set_attribute("maker.vote_distribution", json.dumps(vote_counts))
+            
+            return candidates[winner_idx], vote_counts
     
     async def call_agent(self, agent: AgentName, system_prompt: str, 
                          user_message: str, temperature: float = 0.7,
                          max_tokens: int = 2048) -> AsyncGenerator[str, None]:
         """Stream response from llama.cpp Metal agent"""
+        
+        # Find relevant skills if enabled
+        if self.enable_skills and self.skill_matcher:
+            skills = self.skill_matcher.find_relevant_skills(user_message, top_k=2)
+            
+            if skills:
+                # Augment system prompt with skills
+                skills_section = "\n\n## Available Proven Patterns\n"
+                skills_section += "The following proven coding patterns may be helpful for this task:\n\n"
+                for skill in skills:
+                    skills_section += f"### {skill.name}\n"
+                    skills_section += f"{skill.description}\n\n"
+                    # Include key instructions (truncated for context)
+                    instructions_preview = skill.instructions[:800]  # Limit length
+                    if len(skill.instructions) > 800:
+                        instructions_preview += "\n\n[... see full skill for complete instructions ...]"
+                    skills_section += f"{instructions_preview}\n\n---\n\n"
+                
+                system_prompt = system_prompt + skills_section
+                
+                # Log skill usage
+                for skill in skills:
+                    self._log_skill_usage(skill.name)
+        
         async with httpx.AsyncClient(timeout=self.agent_timeout) as client:
             payload = {
                 "model": "default",
@@ -523,14 +834,30 @@ Vote for the BEST candidate. Reply with only: {', '.join(labels)}
             except Exception as e:
                 yield f" Agent call failed: {str(e)}\n"
     
+    def _log_skill_usage(self, skill_name: str):
+        """
+        Log skill usage in Redis for tracking.
+        
+        Args:
+            skill_name: Name of the skill that was used
+        """
+        try:
+            key = f"skills:usage:{skill_name}"
+            self.redis.incr(key)
+            self.redis.expire(key, 86400 * 30)  # 30 day TTL
+        except Exception as e:
+            print(f"Warning: Failed to log skill usage for {skill_name}: {e}")
+    
     def _classify_request(self, user_input: str) -> str:
         """Classify request type: 'simple_code', 'question', 'complex_code'"""
         lower = user_input.lower().strip()
         
         question_patterns = [
-            "what do i need", "how do i", "how to", "what is", "what are",
-            "explain", "why", "can you tell", "looking at", "analyze",
-            "deploy", "requirements", "dependencies", "understand",
+            "what do i need", "how do i", "how to", "what is", "what are", "what's",
+            "explain", "why", "can you tell", "tell me about", "tell me", "looking at", "analyze",
+            "deploy", "requirements", "dependencies", "understand", "describe",
+            "show me", "list", "find", "search", "about this", "this codebase",
+            "where is", "where are", "which", "does this", "is there", "are there",
         ]
         for p in question_patterns:
             if p in lower:
@@ -565,24 +892,91 @@ Be direct. Output working code in a markdown code block. No questions."""
     
     async def _answer_question(self, task_id: str, user_input: str) -> AsyncGenerator[str, None]:
         """Handle questions/analysis - use Planner for reasoning, not coding"""
+        # Get codebase context from MCP
         codebase_context = await self._query_mcp("analyze_codebase", {})
         
         analyst_prompt = """You are a helpful technical analyst. Answer questions directly and concisely.
 Use the codebase context provided to give accurate, specific answers.
+You have access to MCP tools (read_file, search_docs, find_references) and optionally RAG tools (rag_search, rag_query) if available.
+Use tools when you need more specific information.
 Format your response in clear markdown. No JSON output needed."""
         
         question = f"""Question: {user_input}
 
-Codebase Context:
+Codebase Context (from MCP):
 {codebase_context}
 
-Provide a direct, helpful answer. If you need to reference files, mention them specifically."""
+Provide a direct, helpful answer. Use MCP tools or RAG tools if you need more specific information."""
         
         yield f"[ANALYST] Analyzing your question...\n\n"
         async for chunk in self.call_agent(AgentName.PLANNER, analyst_prompt, question, temperature=0.3, max_tokens=2048):
             yield chunk
         yield "\n"
-    
+
+    async def _planner_reflection(self, code_output: str, task_desc: str, plan: dict) -> str:
+        """
+        Use Planner to reflect on whether code meets the original plan (Low mode alternative to Reviewer).
+
+        This leverages the Planner's existing context about the task and plan to validate
+        that the generated code actually implements what was planned.
+
+        Args:
+            code_output: Generated code to validate
+            task_desc: Original task description
+            plan: The plan created by Planner earlier
+
+        Returns:
+            JSON string with review feedback (same format as Reviewer for compatibility)
+        """
+        planner_prompt = self._load_system_prompt("planner")
+
+        # Get narrative-aware context
+        planner_memory = self.agent_memories[AgentName.PLANNER]
+        narrative_context = planner_memory.get_context_for_agent(task_desc)
+
+        # Format plan for readability
+        plan_text = ""
+        if plan and "plan" in plan:
+            for i, item in enumerate(plan["plan"], 1):
+                plan_text += f"{i}. {item.get('description', 'No description')}\n"
+
+        reflection_request = f"""You created this plan earlier:
+
+{plan_text}
+
+Original task: {task_desc}
+
+Now reflect: Does this generated code successfully implement the plan?
+
+Generated Code:
+```
+{code_output[:4000]}
+```
+
+Context (Narrative Awareness):
+{narrative_context}
+
+Validate:
+1. Does the code implement all planned subtasks?
+2. Does it preserve narrative coherence (business logic flows)?
+3. Are there any obvious bugs or missing pieces?
+4. Does it match the original task intent?
+
+Respond in JSON format:
+{{"status": "approved", "feedback": "Code successfully implements the plan"}}
+OR
+{{"status": "failed", "feedback": "Missing implementation for X, Y needs fixing", "suggestions": ["Add X", "Fix Y"]}}
+"""
+
+        reflection_output = await self.call_agent_sync(
+            AgentName.PLANNER,
+            planner_prompt,
+            reflection_request,
+            temperature=0.2  # Low temperature for consistent validation
+        )
+
+        return reflection_output
+
     async def orchestrate_workflow(self, task_id: str, user_input: str) -> AsyncGenerator[str, None]:
         """Main orchestration loop: preprocess → plan → code → review"""
         
@@ -602,6 +996,25 @@ Provide a direct, helpful answer. If you need to reference files, mention them s
         state.status = "preprocessing"
         state.save_to_redis(self.redis)
         
+        # Phase 3: Check for highly relevant skills (Auto-apply)
+        if self.enable_skills and self.skill_matcher:
+            similar_skills = self.skill_matcher.find_relevant_skills(user_input, top_k=1)
+            if similar_skills:
+                top_skill = similar_skills[0]
+                relevance = self.skill_matcher.calculate_relevance(user_input, top_skill)
+                
+                if relevance > 0.85:
+                    # Get skill stats if registry available
+                    skill_stats = None
+                    if self.skill_registry:
+                        skill_stats = self.skill_registry.get_skill_stats(top_skill.name)
+                    
+                    yield f"[SKILL] Found highly relevant skill: {top_skill.name}\n"
+                    if skill_stats:
+                        yield f"[SKILL] This pattern solved {skill_stats.get('usage_count', 0)} similar tasks before\n"
+                        yield f"[SKILL] Success rate: {skill_stats.get('success_rate', 0.5):.0%}\n"
+                    yield "\n"
+        
         compressor = self.get_context_compressor(task_id)
         compressor.add_message("user", user_input)
         
@@ -614,39 +1027,71 @@ Provide a direct, helpful answer. If you need to reference files, mention them s
         state.save_to_redis(self.redis)
         yield f"[PREPROCESSOR] Converted input to: {preprocessed_text}\n"
         
-        planner_prompt = self._load_system_prompt("planner")
+        # Try EE Planner first if enabled
+        if self.ee_mode:
+            yield "[PLANNER] Using EE Planner (narrative-aware)...\n"
+            ee_plan = await self._plan_with_ee(preprocessed_text)
+            
+            if ee_plan:
+                state.plan = ee_plan
+                yield f"[EE PLANNER] Generated {len(ee_plan['plan'])} subtasks with narrative awareness\n"
+                yield f"[EE PLANNER] Preserving {ee_plan['narrative_count']} business narratives\n"
+                yield f"[EE PLANNER] Average confidence: {ee_plan['average_confidence']:.2f}\n"
+                
+                # Display subtasks
+                for subtask in ee_plan['plan']:
+                    yield f"  • {subtask['description']}\n"
+                    if subtask.get('warnings'):
+                        for warning in subtask['warnings']:
+                            yield f"    ⚠️  {warning}\n"
+            else:
+                # Fallback to standard planner
+                yield "[PLANNER] EE Planner failed, falling back to standard planner...\n"
+                self.ee_mode = False
         
-        codebase_context = await self._query_mcp("analyze_codebase", {})
-        git_context = await self.get_git_context()
-        
-        plan_message = f"""Task: {preprocessed_text}
+        # Standard planner (if EE mode disabled or failed)
+        if not self.ee_mode or not state.plan:
+            planner_prompt = self._load_system_prompt("planner")
+            
+            # Get narrative-aware context from EE Memory (simplified version)
+            planner_memory = self.agent_memories[AgentName.PLANNER]
+            narrative_context = planner_memory.get_context_for_agent(preprocessed_text)
+            
+            # Also get basic MCP context for fallback
+            codebase_context = await self._query_mcp("analyze_codebase", {})
+            git_context = await self.get_git_context()
+            
+            plan_message = f"""Task: {preprocessed_text}
 
-Codebase Context:
+Codebase Context (with Narrative Awareness):
+{narrative_context}
+
+Additional Context (from MCP):
 {codebase_context}
 
 {git_context}
 
-Create an execution plan with tasks. Use MCP tools if you need more context.
+Create an execution plan with tasks that preserves thematic flows. Use MCP tools (read_file, search_docs, find_references) or RAG tools (rag_search, rag_query) if you need more context.
 """
-        
-        plan_json = ""
-        yield "[PLANNER] Analyzing task with codebase context...\n"
-        async for chunk in self.call_agent(AgentName.PLANNER, planner_prompt, plan_message, temperature=0.3, max_tokens=1024):
-            plan_json += chunk
-            yield chunk
-        
-        try:
-            state.plan = json.loads(plan_json)
-        except json.JSONDecodeError:
-            import re
-            json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', plan_json, re.DOTALL)
-            if json_match:
-                try:
-                    state.plan = json.loads(json_match.group())
-                except json.JSONDecodeError:
+            
+            plan_json = ""
+            yield "[PLANNER] Analyzing task with codebase context...\n"
+            async for chunk in self.call_agent(AgentName.PLANNER, planner_prompt, plan_message, temperature=0.3, max_tokens=1024):
+                plan_json += chunk
+                yield chunk
+            
+            try:
+                state.plan = json.loads(plan_json)
+            except json.JSONDecodeError:
+                import re
+                json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', plan_json, re.DOTALL)
+                if json_match:
+                    try:
+                        state.plan = json.loads(json_match.group())
+                    except json.JSONDecodeError:
+                        state.plan = {"plan": [{"id": "task_1", "description": preprocessed_text, "assigned_to": "coder"}]}
+                else:
                     state.plan = {"plan": [{"id": "task_1", "description": preprocessed_text, "assigned_to": "coder"}]}
-            else:
-                state.plan = {"plan": [{"id": "task_1", "description": preprocessed_text, "assigned_to": "coder"}]}
         
         state.status = "coding"
         state.save_to_redis(self.redis)
@@ -687,11 +1132,20 @@ Create an execution plan with tasks. Use MCP tools if you need more context.
             state.status = "reviewing"
             state.context_stats = compressor.get_stats()
             state.save_to_redis(self.redis)
-            
-            # 4. REVIEW
-            reviewer_prompt = self._load_system_prompt("reviewer")
-            
-            review_request = f"""Review this code:
+
+            # 4. REVIEW (mode-dependent)
+            review_output = ""
+
+            if self.maker_mode == "low":
+                # Low mode: Use Planner reflection (no extra RAM needed)
+                yield f"\n[PLANNER REFLECTION] Validating code against plan...\n"
+                review_output = await self._planner_reflection(code_output, task_desc, state.plan)
+                yield review_output + "\n"
+            else:
+                # High mode: Use dedicated Reviewer (Qwen 32B)
+                reviewer_prompt = self._load_system_prompt("reviewer")
+
+                review_request = f"""Review this code:
 
 {code_output}
 
@@ -699,13 +1153,12 @@ Original task: {task_desc}
 
 Run tests and validate code quality.
 """
-            
-            review_output = ""
-            yield f"\n[REVIEWER] Validating code...\n"
-            async for chunk in self.call_agent(AgentName.REVIEWER, reviewer_prompt, review_request, temperature=0.1):
-                review_output += chunk
-                yield chunk
-            
+
+                yield f"\n[REVIEWER] Validating code...\n"
+                async for chunk in self.call_agent(AgentName.REVIEWER, reviewer_prompt, review_request, temperature=0.1):
+                    review_output += chunk
+                    yield chunk
+
             compressor.add_message("reviewer", review_output[:1000])
             
             try:
@@ -724,14 +1177,64 @@ Run tests and validate code quality.
                 state.status = "complete"
                 state.save_to_redis(self.redis)
                 yield "\n Code approved!\n"
+                
+                # Phase 3: Extract new skill if learning enabled
+                if self.enable_skill_learning and self.skill_extractor:
+                    try:
+                        new_skill = await self.skill_extractor.extract_skill_from_task(
+                            task_id, state, self.redis
+                        )
+                        if new_skill:
+                            yield f"[LEARNING] Extracted new skill: {new_skill.name}\n"
+                            # Register in registry
+                            if self.skill_registry:
+                                self.skill_registry.register_skill(new_skill)
+                            # Reload skills in matcher
+                            if self.skill_matcher:
+                                self.skill_matcher.skill_loader.reload_skill(new_skill.name)
+                    except Exception as e:
+                        yield f"[LEARNING] Error extracting skill: {e}\n"
+                
+                # Update skill usage stats (if skills were used)
+                if self.enable_skills and self.skill_registry:
+                    # Find which skills were used (from Redis usage tracking)
+                    for skill_name in self.skill_matcher.skill_loader.get_skill_names():
+                        usage_key = f"skills:usage:{skill_name}"
+                        if self.redis.exists(usage_key):
+                            # Skill was used, update stats
+                            self.skill_registry.update_skill_stats(skill_name, success=True)
+                
                 break
             else:
                 yield f"\n Iteration {state.iteration_count}: Feedback to Coder\n"
+                
+                # Update skill stats for failed iteration (if skills were used)
+                if self.enable_skills and self.skill_registry and state.iteration_count >= max_iterations:
+                    # Task failed after max iterations
+                    for skill_name in self.skill_matcher.skill_loader.get_skill_names():
+                        usage_key = f"skills:usage:{skill_name}"
+                        if self.redis.exists(usage_key):
+                            self.skill_registry.update_skill_stats(skill_name, success=False)
         
         if state.iteration_count >= max_iterations:
             yield f"\n Max iterations ({max_iterations}) reached. Escalating to Planner.\n"
             state.status = "failed"
             state.save_to_redis(self.redis)
+            
+            # Phase 3: Extract anti-patterns from failed task
+            if self.enable_skill_learning and self.skill_extractor:
+                try:
+                    # Check if worth extracting as anti-pattern
+                    if self.skill_extractor.is_skill_worthy(state):
+                        new_skill = await self.skill_extractor.extract_skill_from_task(
+                            task_id, state, self.redis
+                        )
+                        if new_skill:
+                            yield f"[LEARNING] Extracted anti-pattern skill: {new_skill.name}\n"
+                            if self.skill_registry:
+                                self.skill_registry.register_skill(new_skill)
+                except Exception as e:
+                    yield f"[LEARNING] Error extracting anti-pattern: {e}\n"
         
         final_stats = compressor.get_stats()
         self.save_session(task_id)
@@ -745,6 +1248,87 @@ Run tests and validate code quality.
             "review_feedback": state.review_feedback,
             "context_stats": final_stats
         }, indent=2)
+    
+    async def resume_session(self, session_id: str) -> AsyncGenerator[str, None]:
+        """
+        Resume a long-running session.
+        
+        Creates resume context and continues workflow from where it left off.
+        
+        Args:
+            session_id: Session identifier (used as task_id)
+        
+        Yields:
+            Streaming output from workflow
+        """
+        if not self.enable_long_running:
+            yield json.dumps({
+                "error": "Long-running support not enabled. Set ENABLE_LONG_RUNNING=true and WORKSPACE_DIR environment variable"
+            })
+            return
+        
+        if not self.session_manager:
+            yield json.dumps({
+                "error": "SessionManager not initialized. Ensure ENABLE_LONG_RUNNING=true and WORKSPACE_DIR is set"
+            })
+            return
+        
+        # Create resume context
+        resume_context = self.session_manager.create_resume_context()
+        
+        # Log resumption
+        self.progress_tracker.log_progress(f"Resuming session {session_id}")
+        
+        # Continue workflow with resume context
+        async for output in self.orchestrate_workflow(session_id, resume_context):
+            yield output
+    
+    async def checkpoint_session(self, session_id: str, feature_name: str) -> Dict[str, Any]:
+        """
+        Create a clean checkpoint for a completed feature.
+        
+        Args:
+            session_id: Session identifier (used as task_id)
+            feature_name: Name of the feature being checkpointed
+        
+        Returns:
+            Dictionary with checkpoint results
+        """
+        if not self.enable_long_running:
+            return {
+                "success": False,
+                "error": "Long-running support not enabled. Set ENABLE_LONG_RUNNING=true and WORKSPACE_DIR environment variable"
+            }
+        
+        if not self.checkpoint_manager:
+            return {
+                "success": False,
+                "error": "CheckpointManager not initialized. Ensure ENABLE_LONG_RUNNING=true and WORKSPACE_DIR is set"
+            }
+        
+        # Get code from task state (per spec requirement)
+        state = TaskState.load_from_redis(session_id, self.redis)
+        if not state:
+            return {
+                "success": False,
+                "error": f"Task state not found for session {session_id}. Task may not exist in Redis."
+            }
+        
+        code = state.code
+        if not code:
+            return {
+                "success": False,
+                "error": f"No code found in task state for session {session_id}. Code generation may not have completed."
+            }
+        
+        # Create checkpoint with actual code
+        result = await self.checkpoint_manager.create_checkpoint(
+            feature_name=feature_name,
+            code=code,
+            session_id=session_id
+        )
+        
+        return result
 
 # Usage
 async def main():

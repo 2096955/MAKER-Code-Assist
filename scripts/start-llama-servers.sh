@@ -7,6 +7,18 @@ set -e
 echo " Starting llama.cpp servers natively (Metal acceleration)"
 echo ""
 
+# Get MAKER_MODE from environment (default: high)
+MAKER_MODE=${MAKER_MODE:-high}
+echo "🎚️  MAKER_MODE: $MAKER_MODE"
+if [ "$MAKER_MODE" = "low" ]; then
+  echo "   Low mode: Skipping Reviewer (uses Planner reflection instead)"
+  echo "   RAM requirement: ~40-50GB (vs 128GB in High mode)"
+else
+  echo "   High mode: All 6 models (Preprocessor, Planner, Coder, Reviewer, Voter, GPT-OSS)"
+  echo "   RAM requirement: ~128GB"
+fi
+echo ""
+
 # Check if llama.cpp is installed
 if ! command -v llama-server &> /dev/null; then
     echo "  llama-server not found. Installing llama.cpp..."
@@ -53,7 +65,7 @@ llama-server \
   --port 8001 \
   --host 0.0.0.0 \
   --n-gpu-layers 999 \
-  --ctx-size 131072 \
+  --ctx-size 32768 \
   --parallel 4 \
   > logs/llama-planner.log 2>&1 &
 echo $! > /tmp/llama-planner.pid
@@ -65,23 +77,27 @@ llama-server \
   --port 8002 \
   --host 0.0.0.0 \
   --n-gpu-layers 999 \
-  --ctx-size 131072 \
+  --ctx-size 32768 \
   --parallel 4 \
   > logs/llama-coder.log 2>&1 &
 echo $! > /tmp/llama-coder.pid
 echo " Coder started (PID: $(cat /tmp/llama-coder.pid), port 8002)"
 
-# Reviewer (port 8003)
-llama-server \
-  --model models/qwen-coder-32b-instruct.Q6_K.gguf \
-  --port 8003 \
-  --host 0.0.0.0 \
-  --n-gpu-layers 999 \
-  --ctx-size 262144 \
-  --parallel 4 \
-  > logs/llama-reviewer.log 2>&1 &
-echo $! > /tmp/llama-reviewer.pid
-echo " Reviewer started (PID: $(cat /tmp/llama-reviewer.pid), port 8003)"
+# Reviewer (port 8003) - only in High mode
+if [ "$MAKER_MODE" = "high" ]; then
+  llama-server \
+    --model models/qwen-coder-32b-instruct.Q6_K.gguf \
+    --port 8003 \
+    --host 0.0.0.0 \
+    --n-gpu-layers 999 \
+    --ctx-size 32768 \
+    --parallel 4 \
+    > logs/llama-reviewer.log 2>&1 &
+  echo $! > /tmp/llama-reviewer.pid
+  echo " Reviewer started (PID: $(cat /tmp/llama-reviewer.pid), port 8003)"
+else
+  echo " Reviewer skipped (Low mode uses Planner reflection)"
+fi
 
 # Voter (port 8004) - Qwen2.5-1.5B for MAKER voting
 if [ -f "models/qwen2.5-1.5b-instruct-q6_k.gguf" ]; then
@@ -108,6 +124,7 @@ if [ -f "models/gpt-oss-20b.gguf" ]; then
     --n-gpu-layers 999 \
     --ctx-size 32768 \
     --parallel 4 \
+    --jinja \
     > logs/llama-gpt-oss.log 2>&1 &
   echo $! > /tmp/llama-gpt-oss.pid
   echo " GPT-OSS-20B started (PID: $(cat /tmp/llama-gpt-oss.pid), port 8005)"
