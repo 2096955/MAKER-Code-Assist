@@ -4,8 +4,9 @@ This directory contains images and other assets for documentation.
 
 ## Architecture Diagrams
 
-- **maker-architecture.png** - Original single-orchestrator MAKER pipeline diagram
-- **ARCHITECTURE_DIAGRAM_PROMPT.md** - Detailed prompt for generating new dual-orchestrator diagram
+- **maker-architecture.png** - Original single-orchestrator MAKER pipeline diagram (preserved for reference)
+- **highlowmaker.png** - Current dual-orchestrator architecture diagram (High & Low modes)
+- **ARCHITECTURE_DIAGRAM_PROMPT.md** - Detailed prompt used to generate the dual-orchestrator diagram
 
 ### Diagram Versions
 
@@ -13,12 +14,14 @@ This directory contains images and other assets for documentation.
    - Single orchestrator with MAKER_MODE environment variable switching
    - Shows complete 6-step MAKER pipeline with Reviewer (Qwen3-Coder 32B)
    - Preserved for reference in CHANGELOG.md
+   - Used in README.md before dual-orchestrator migration
 
-2. **New (to be created)**: 
+2. **Current (highlowmaker.png)**: 
    - Dual-orchestrator architecture with High/Low modes running simultaneously
    - High mode: Full pipeline with Reviewer (port 8080)
    - Low mode: Same pipeline but uses Planner Reflection instead of Reviewer (port 8081)
-   - See [ARCHITECTURE_DIAGRAM_PROMPT.md](ARCHITECTURE_DIAGRAM_PROMPT.md) for detailed specifications
+   - Currently displayed in README.md
+   - Generated from [ARCHITECTURE_DIAGRAM_PROMPT.md](ARCHITECTURE_DIAGRAM_PROMPT.md) specifications
 
 ## Images
 
