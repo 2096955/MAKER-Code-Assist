@@ -48,9 +48,24 @@ This starts:
 curl http://localhost:8080/health  # High mode
 curl http://localhost:8081/health  # Low mode
 
+# Check Phoenix observability dashboard
+curl http://localhost:6006/health  # Phoenix UI
+
 # Or run full test suite
 bash tests/test_workflow.sh
 ```
+
+### 5. View Observability Dashboard
+
+**Phoenix Observability**: http://localhost:6006
+
+Open this URL in your browser to see:
+- All agent interactions and workflow traces
+- Performance metrics and timing information
+- Success/failure rates
+- High vs Low mode comparisons
+
+See [docs/PHOENIX_OBSERVABILITY.md](docs/PHOENIX_OBSERVABILITY.md) for complete guide.
 
 ### 3. Connect to IDE
 

@@ -58,6 +58,18 @@ docker compose logs orchestrator-low --tail=50
 
 # Check server health
 for port in 8000 8001 8002 8003 8004 8005; do curl -s http://localhost:$port/health; done
+
+# === Phoenix Observability ===
+# Access Phoenix UI (evaluations and traces)
+open http://localhost:6006
+
+# Or verify Phoenix is running
+curl http://localhost:6006/health
+
+# View traces for both modes:
+# - High mode traces show Reviewer validation
+# - Low mode traces show Planner reflection
+# See docs/PHOENIX_OBSERVABILITY.md for complete guide
 ```
 
 ## Architecture

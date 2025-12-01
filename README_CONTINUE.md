@@ -69,7 +69,22 @@ docker compose logs orchestrator-low | grep "MAKER Mode"
 # Test both endpoints
 curl http://localhost:8080/health  # High mode
 curl http://localhost:8081/health  # Low mode
+
+# View observability dashboard
+open http://localhost:6006  # Phoenix UI
 ```
+
+## Observability & Evaluation
+
+**Phoenix Dashboard**: http://localhost:6006
+
+After making requests through Continue, view traces in Phoenix to see:
+- Complete workflow execution (Preprocessor → Planner → Coder → Voter → Reviewer/Planner Reflection)
+- Performance metrics (latency, token usage)
+- Success/failure rates
+- High vs Low mode comparisons
+
+See [docs/PHOENIX_OBSERVABILITY.md](docs/PHOENIX_OBSERVABILITY.md) for complete observability guide.
 
 ## Example Workflow
 
