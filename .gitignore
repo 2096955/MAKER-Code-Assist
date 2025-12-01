@@ -34,6 +34,44 @@ MakerCode.png
 # Redundant summary files (use docs/DUAL_ORCHESTRATOR_SETUP.md instead)
 DUAL_ORCHESTRATOR_SUMMARY.md
 
+# Implementation planning/status docs (not needed for dual orchestrator system)
+CURSOR_IMPLEMENTATION_PLAN.md
+CURSOR_QUESTIONS_ANSWERED.md
+IMPLEMENTATION_SUMMARY.md
+README_CURSOR_IMPLEMENTATION.md
+VSCode_VERIFICATION.md
+docs/IMPLEMENTATION_COMPLETE.md
+docs/IMPLEMENTATION_STATUS.md
+docs/IMPLEMENTATION_SUMMARY.md
+docs/PHASE1_FIXES.md
+docs/PHASE3_COMPLETE.md
+docs/INTEGRATION_CHECK.md
+docs/INTEGRATION_TEST_PLAN.md
+docs/INTEGRATION_TEST_RESULTS.md
+docs/PIPELINE_TEST_RESULTS.md
+docs/PRODUCTION_READINESS_ASSESSMENT.md
+docs/VALIDATION_ROADMAP.md
+docs/SPEC_ALIGNMENT_ANALYSIS.md
+docs/SPEC_ALIGNMENT_IMPLEMENTATION.md
+docs/EE_INTEGRATION_COMPLETE.md
+docs/QUICK_START_EE.md
+
+# Redundant RAG docs (consolidate to rag-quickstart.md)
+docs/rag-setup-complete.md
+docs/rag-setup-guide.md
+docs/rag-integration.md
+docs/faiss-vs-qdrant-comparison.md
+
+# Old planning/implementation docs (code is source of truth)
+docs/memory-long-running-observability-plan.md
+docs/multi-agent-system-blueprint.md
+docs/maker-voting-implementation.md
+docs/mcp-wrapper-implementation.md
+docs/claude-code-insights.md
+docs/correction-mcp-vs-openai.md
+docs/integration-status.md
+docs/model-specific-prompts.md
+
 # Skills are kept in git (they're part of the codebase)
 # skills/ is NOT in .gitignore
 
