@@ -18,6 +18,13 @@ venv/
 # OS
 .DS_Store
 
+# Workspace (progress files, not in git)
+workspace/*
+!workspace/.gitkeep
+
+# Skills are kept in git (they're part of the codebase)
+# skills/ is NOT in .gitignore
+
 # Local tool configs (not part of project)
 .claude/
 .specify/
