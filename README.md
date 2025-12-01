@@ -162,10 +162,15 @@ This replaces the previous hard 2000-character truncation, allowing the system t
 
 ## Documentation
 
-- [Implementation Plan](multi-agent-system-implementation.plan.md)
-- [Blueprint Reference](docs/multi-agent-system-blueprint.md)
-- [Agent Prompts](prompts/) - MAKER-style prompts with objectives, tools, constraints
-- [Model-Specific Prompt Design](docs/model-specific-prompts.md)
+**Quick Links:**
+
+- **[📚 Complete Documentation Index](docs/README.md)** - All documentation organized by topic
+- **[🚀 README_CONTINUE.md](README_CONTINUE.md)** - Continue VSCode extension setup (easiest way to use MAKER)
+- **[📖 CLAUDE.md](CLAUDE.md)** - Complete project documentation for Claude Code
+- **[🎚️ docs/MAKER_MODES.md](docs/MAKER_MODES.md)** - High vs Low mode comparison
+- **[🔍 docs/PHOENIX_OBSERVABILITY.md](docs/PHOENIX_OBSERVABILITY.md)** - Observability and evaluation guide
+- **[⚙️ docs/DUAL_ORCHESTRATOR_SETUP.md](docs/DUAL_ORCHESTRATOR_SETUP.md)** - Architecture deep dive
+- **[📝 CHANGELOG.md](CHANGELOG.md)** - Project changelog
 
 ## Troubleshooting
 
