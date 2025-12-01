@@ -72,6 +72,10 @@ docs/correction-mcp-vs-openai.md
 docs/integration-status.md
 docs/model-specific-prompts.md
 
+# Alternative client (not part of dual orchestrator system)
+# Main clients are Continue.dev and Open WebUI
+codex/
+
 # Skills are kept in git (they're part of the codebase)
 # skills/ is NOT in .gitignore
 
