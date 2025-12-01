@@ -403,6 +403,12 @@ class Orchestrator:
         else:
             self.skill_extractor = None
             self.skill_registry = None
+
+        # Log MAKER mode for visibility
+        if self.maker_mode == "low":
+            print(f"[Orchestrator] 🎚️  MAKER Mode: LOW (Planner reflection validation, ~40-50GB RAM)")
+        else:
+            print(f"[Orchestrator] 🎚️  MAKER Mode: HIGH (Reviewer validation, ~128GB RAM)")
     
     def _load_system_prompt(self, agent_name: str) -> str:
         """Load system prompt from prompts/ directory"""
