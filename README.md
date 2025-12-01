@@ -2,6 +2,10 @@
 
 Applying Cognizant's MAKER paper to build a production-ready local multi-agent coding system optimized for Apple Silicon (M4 Max) with llama.cpp Metal backend.
 
+![MAKER Reasoning Pipeline - Original Architecture](docs/assets/maker-architecture.png)
+
+*Original MAKER pipeline showing the complete 6-stage reasoning process: Preprocess → Plan → Generate (MAKER) → Vote (MAKER) → Review → Output. For the current dual-orchestrator architecture (High & Low modes), see the [Architecture](#architecture) section below.*
+
 ## Acknowledgments
 
 This project is built using open-source models and tools. See [CONTRIBUTORS.md](CONTRIBUTORS.md) for a complete list of contributors including Cursor, Gemini, Qwen Coder, and NVIDIA Nemo.
