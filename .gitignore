@@ -22,6 +22,15 @@ venv/
 workspace/*
 !workspace/.gitkeep
 
+# Firebase debug logs
+firebase-debug.log
+
+# Genkit traces (generated)
+.genkit/
+
+# Temporary/duplicate images (keep only docs/assets/)
+MakerCode.png
+
 # Skills are kept in git (they're part of the codebase)
 # skills/ is NOT in .gitignore
 
