@@ -31,6 +31,9 @@ firebase-debug.log
 # Temporary/duplicate images (keep only docs/assets/)
 MakerCode.png
 
+# Redundant summary files (use docs/DUAL_ORCHESTRATOR_SETUP.md instead)
+DUAL_ORCHESTRATOR_SUMMARY.md
+
 # Skills are kept in git (they're part of the codebase)
 # skills/ is NOT in .gitignore
 
