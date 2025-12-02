@@ -980,35 +980,44 @@ Be direct. Output working code in a markdown code block. No questions."""
             # Get codebase overview
             try:
                 codebase_overview = await self._query_mcp("analyze_codebase", {})
-                if not codebase_overview.startswith(" MCP"):
+                # Handle both string and dict responses
+                if isinstance(codebase_overview, dict):
+                    codebase_overview = json.dumps(codebase_overview, indent=2)
+                if codebase_overview and not codebase_overview.startswith(" MCP"):
                     yield f"**Codebase Structure:**\n```\n{codebase_overview[:500]}\n```\n\n"
             except Exception as e:
                 yield f"Warning: Could not read codebase overview: {e}\n\n"
 
             # Read key orchestrator file
+            orchestrator_code = ""
             try:
                 orchestrator_code = await self._query_mcp("read_file", {"path": "orchestrator/orchestrator.py"})
                 if orchestrator_code and not orchestrator_code.startswith(" MCP"):
-                    yield f"**Reading orchestrator/orchestrator.py** (first 100 lines):\n```python\n{orchestrator_code[:5000]}\n```\n\n"
+                    code_snippet = orchestrator_code[:5000]
+                    yield f"**Reading orchestrator/orchestrator.py** (first 100 lines):\n```python\n{code_snippet}\n```\n\n"
                 else:
                     yield f"Note: Could not read orchestrator.py - {orchestrator_code}\n\n"
+                    orchestrator_code = ""  # Clear invalid code
             except Exception as e:
                 yield f"Warning: Could not read orchestrator.py: {e}\n\n"
 
-            # Now use Preprocessor to provide analysis based on the code we just showed
-            analyst_prompt = """You are a helpful technical assistant. The user has been shown actual code from their codebase above.
+            # Now use Preprocessor with the ACTUAL CODE in the prompt
+            analyst_prompt = """You are a helpful technical assistant analyzing actual codebase code.
 
-Provide specific, actionable guidance based on the actual code shown. Focus on:
+Provide specific, actionable guidance based on the code provided. Focus on:
 1. Key frameworks/libraries needed for the target language
-2. Specific translation challenges
+2. Specific translation challenges based on actual code patterns
 3. Architectural patterns to preserve
 4. Step-by-step migration approach
 
-Be direct and specific based on the code shown."""
+Be direct and specific - reference actual classes, functions, and patterns from the code."""
 
-            question_with_context = f"""User question: {user_input}
+            # Include the actual code in the prompt so the Preprocessor can see it
+            code_context = f"\n\nActual code from orchestrator/orchestrator.py:\n```python\n{orchestrator_code[:3000]}\n```\n" if orchestrator_code else ""
 
-The actual codebase structure and code has been shown above. Provide specific, practical guidance."""
+            question_with_context = f"""User question: {user_input}{code_context}
+
+Analyze the ACTUAL code above and provide specific, practical guidance for translation."""
 
             async for chunk in self.call_agent(AgentName.PREPROCESSOR, analyst_prompt, question_with_context, temperature=0.4, max_tokens=2000):
                 yield chunk
