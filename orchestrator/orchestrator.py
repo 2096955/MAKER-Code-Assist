@@ -977,48 +977,92 @@ Be direct. Output working code in a markdown code block. No questions."""
             # Actually read key codebase files via MCP and show them to the user
             yield f"[ANALYST] Reading codebase files via MCP...\n\n"
 
-            # Get codebase overview
+            # Step 1: Get codebase overview
+            codebase_overview = ""
             try:
-                codebase_overview = await self._query_mcp("analyze_codebase", {})
-                # Handle both string and dict responses
-                if isinstance(codebase_overview, dict):
-                    codebase_overview = json.dumps(codebase_overview, indent=2)
+                overview_result = await self._query_mcp("analyze_codebase", {})
+                if isinstance(overview_result, dict):
+                    codebase_overview = json.dumps(overview_result, indent=2)
+                else:
+                    codebase_overview = overview_result
+
                 if codebase_overview and not codebase_overview.startswith(" MCP"):
                     yield f"**Codebase Structure:**\n```\n{codebase_overview[:500]}\n```\n\n"
             except Exception as e:
-                yield f"Warning: Could not read codebase overview: {e}\n\n"
+                yield f"Note: Could not get overview: {e}\n\n"
 
-            # Read key orchestrator file
-            orchestrator_code = ""
+            # Step 2: Intelligently determine which files to read based on the question
+            file_finder_prompt = """Based on the user's question and codebase structure, identify 2-3 most relevant files.
+
+Output ONLY a JSON array of file paths. Example: ["orchestrator/api_server.py", "orchestrator/mcp_server.py"]
+
+If unsure, include the main/central files."""
+
+            file_finder_question = f"""Question: {user_input}
+
+Codebase:
+{codebase_overview[:1000]}
+
+Which files to read? JSON array only:"""
+
+            yield f"**Finding relevant files...**\n"
+
+            file_list_response = await self.call_agent_sync(
+                AgentName.PREPROCESSOR,
+                file_finder_prompt,
+                file_finder_question,
+                temperature=0.2
+            )
+
+            # Parse file paths
+            import re
+            file_paths = []
             try:
-                orchestrator_code = await self._query_mcp("read_file", {"path": "orchestrator/orchestrator.py"})
-                if orchestrator_code and not orchestrator_code.startswith(" MCP"):
-                    code_snippet = orchestrator_code[:5000]
-                    yield f"**Reading orchestrator/orchestrator.py** (first 100 lines):\n```python\n{code_snippet}\n```\n\n"
+                json_match = re.search(r'\[.*?\]', file_list_response, re.DOTALL)
+                if json_match:
+                    file_paths = json.loads(json_match.group())
                 else:
-                    yield f"Note: Could not read orchestrator.py - {orchestrator_code}\n\n"
-                    orchestrator_code = ""  # Clear invalid code
-            except Exception as e:
-                yield f"Warning: Could not read orchestrator.py: {e}\n\n"
+                    file_paths = re.findall(r'["\']([a-zA-Z0-9_/\-\.]+\.py)["\']', file_list_response)
 
-            # Now use Preprocessor with the ACTUAL CODE in the prompt
-            analyst_prompt = """You are a helpful technical assistant analyzing actual codebase code.
+                if not file_paths:
+                    file_paths = ["orchestrator/orchestrator.py"]
 
-Provide specific, actionable guidance based on the code provided. Focus on:
-1. Key frameworks/libraries needed for the target language
-2. Specific translation challenges based on actual code patterns
+                yield f"Reading: {', '.join(file_paths[:3])}\n\n"
+            except Exception:
+                file_paths = ["orchestrator/orchestrator.py"]
+                yield f"Using default: orchestrator/orchestrator.py\n\n"
+
+            # Step 3: Read the files
+            all_code = ""
+            for file_path in file_paths[:3]:
+                try:
+                    code = await self._query_mcp("read_file", {"path": file_path})
+                    if code and not code.startswith(" MCP"):
+                        snippet = code[:3000]
+                        yield f"**{file_path}:**\n```python\n{snippet}\n...\n```\n\n"
+                        all_code += f"\n\n=== {file_path} ===\n{code[:3000]}\n"
+                except Exception as e:
+                    yield f"Note: Could not read {file_path}: {e}\n"
+
+            # Step 4: Analyze with actual code in context
+            analyst_prompt = """Analyze the actual codebase code provided.
+
+Provide specific guidance focused on:
+1. Key frameworks/libraries for target language
+2. Translation challenges from actual code patterns
 3. Architectural patterns to preserve
 4. Step-by-step migration approach
 
-Be direct and specific - reference actual classes, functions, and patterns from the code."""
+Reference actual classes, functions, patterns from the code."""
 
-            # Include the actual code in the prompt so the Preprocessor can see it
-            code_context = f"\n\nActual code from orchestrator/orchestrator.py:\n```python\n{orchestrator_code[:3000]}\n```\n" if orchestrator_code else ""
+            question_with_context = f"""Question: {user_input}
 
-            question_with_context = f"""User question: {user_input}{code_context}
+Actual codebase code:
+{all_code}
 
-Analyze the ACTUAL code above and provide specific, practical guidance for translation."""
+Provide specific, practical guidance based on THIS code."""
 
+            yield f"**Analysis:**\n\n"
             async for chunk in self.call_agent(AgentName.PREPROCESSOR, analyst_prompt, question_with_context, temperature=0.4, max_tokens=2000):
                 yield chunk
 
