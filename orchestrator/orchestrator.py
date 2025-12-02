@@ -6,9 +6,28 @@ Orchestrator: Coordinates agents, manages state, handles streaming
 import json
 import time
 import os
-import redis
 import httpx
 import asyncio
+
+# Optional Redis import - gracefully handle if not available
+try:
+    import redis
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
+    # Create a dummy redis module for type hints
+    class DummyRedis:
+        class Redis:
+            def __init__(self, *args, **kwargs): pass
+            def ping(self): raise ConnectionError("Redis not available")
+            def get(self, *args, **kwargs): return None
+            def set(self, *args, **kwargs): pass
+            def incr(self, *args, **kwargs): return 0
+            def expire(self, *args, **kwargs): pass
+            def scan_iter(self, *args, **kwargs): return iter([])
+        class ConnectionError(Exception): pass
+        class TimeoutError(Exception): pass
+    redis = DummyRedis()
 from typing import AsyncGenerator, Optional, Dict, Any, List
 from dataclasses import dataclass, asdict, field
 from enum import Enum
@@ -317,10 +336,45 @@ class TaskState:
         return TaskState(**json.loads(data))
 
 class Orchestrator:
-    def __init__(self, redis_host=None, redis_port=6379, mcp_url=None):
-        redis_host = redis_host or os.getenv("REDIS_HOST", "localhost")
-        redis_port = int(os.getenv("REDIS_PORT", redis_port))
-        self.redis = redis.Redis(host=redis_host, port=redis_port, decode_responses=True)
+    def __init__(self, redis_host=None, redis_port=6379, mcp_url=None, redis_client=None):
+        """
+        Initialize Orchestrator.
+        
+        Args:
+            redis_host: Redis host (default: localhost)
+            redis_port: Redis port (default: 6379)
+            mcp_url: MCP server URL
+            redis_client: Optional Redis client (for testing/mocking). If provided, skips connection.
+        """
+        # Redis connection - make it optional for testing
+        if redis_client is not None:
+            self.redis = redis_client
+        else:
+            redis_host = redis_host or os.getenv("REDIS_HOST", "localhost")
+            redis_port = int(os.getenv("REDIS_PORT", redis_port))
+            try:
+                if not REDIS_AVAILABLE:
+                    raise ImportError("redis module not installed")
+                self.redis = redis.Redis(host=redis_host, port=redis_port, decode_responses=True, socket_connect_timeout=2)
+                # Test connection
+                self.redis.ping()
+            except (redis.ConnectionError, redis.TimeoutError, ImportError, AttributeError) as e:
+                # Redis not available - create a mock client that fails gracefully
+                class MockRedis:
+                    def __getattr__(self, name):
+                        def mock_method(*args, **kwargs):
+                            raise RuntimeError(f"Redis not available: {e}. Operation '{name}' requires Redis.")
+                        return mock_method
+                    def ping(self): raise redis.ConnectionError("Redis not available")
+                    def get(self, *args, **kwargs): return None
+                    def set(self, *args, **kwargs): pass
+                    def incr(self, *args, **kwargs): return 0
+                    def expire(self, *args, **kwargs): pass
+                    def scan_iter(self, *args, **kwargs): return iter([])
+                self.redis = MockRedis()
+                # Log warning but don't fail initialization
+                import warnings
+                warnings.warn(f"Redis not available ({e}). Orchestrator will work but session/task persistence disabled.", UserWarning)
         
         # llama.cpp Metal endpoints (from docker-compose)
         # Each service runs on port 8080 internally, mapped to 8000-8003 externally
@@ -340,6 +394,9 @@ class Orchestrator:
 
         # MAKER mode: "high" (with Reviewer, needs 128GB RAM) or "low" (Planner reflection, works on 40GB RAM)
         self.maker_mode = os.getenv("MAKER_MODE", "high").lower()
+        
+        # Codebase root - set early for use in other initializations
+        self.codebase_root = os.getenv("CODEBASE_ROOT", ".")
         
         # Tool permissions (Crush pattern) - Week 2 feature, optional
         try:
@@ -379,7 +436,7 @@ class Orchestrator:
         self.ee_mode = os.getenv("EE_MODE", "true").lower() == "true"
         
         # EE Memory: Shared codebase world model (simplified version)
-        codebase_root = os.getenv("CODEBASE_ROOT", ".")
+        codebase_root = self.codebase_root
         self.world_model = HierarchicalMemoryNetwork(
             codebase_path=codebase_root,
             compression_ratios=[0.3, 0.2, 0.15],
