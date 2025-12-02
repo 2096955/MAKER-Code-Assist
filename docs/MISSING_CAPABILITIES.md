@@ -31,7 +31,9 @@ Based on analysis of OpenCode (archived) and its successor Crush by Charmbracele
 
 3. **Auto-Compact Context Management** (OpenCode)
    - **What they have**: Monitors token usage, auto-triggers summarization at 95% of context window
+   - **Reference**: [OpenCode session.go](https://github.com/opencode-ai/opencode/blob/main/session/session.go) - See `autoCompact` config and token monitoring
    - **Our system**: Manual compression via ContextCompressor, no automatic threshold
+   - **Our file**: [orchestrator/orchestrator.py:135-178](../orchestrator/orchestrator.py#L135-L178) - `ContextCompressor.compress_if_needed()`
    - **Impact**: Risk of hitting context limits unexpectedly
    - **Implementation**:
      ```python
@@ -45,26 +47,36 @@ Based on analysis of OpenCode (archived) and its successor Crush by Charmbracele
 
 4. **LSP Integration** (Crush)
    - **What they have**: Language Server Protocol for semantic code understanding
+   - **Reference**: [Crush lsp.go](https://github.com/charmbracelet/crush/blob/main/lsp/lsp.go) - LSP client implementation
+   - **Config example**: [Crush config.go](https://github.com/charmbracelet/crush/blob/main/config/config.go) - See `LSPServers` map
    - **Our system**: File reading only, no LSP
+   - **Our file**: [orchestrator/mcp_server.py:41-56](../orchestrator/mcp_server.py#L41-L56) - `read_file()` method
    - **Impact**: No type information, definitions, or references beyond grep
    - **Value**: Semantic code intelligence (go-to-definition, find-references, type hints)
    - **Implementation**: 12-16 hours
 
 5. **Mid-Session Model Switching** (Crush)
    - **What they have**: Switch between models while preserving conversation context
+   - **Reference**: [Crush session.go](https://github.com/charmbracelet/crush/blob/main/session/session.go) - Model switching with context preservation
    - **Our system**: Fixed model per agent, requires restart to change
+   - **Our file**: [orchestrator/orchestrator.py:297-310](../orchestrator/orchestrator.py#L297-L310) - Fixed endpoints config
    - **Impact**: Can't adapt to task complexity changes during conversation
    - **Use case**: Start with fast model, switch to powerful model for complex subtask
 
 6. **Per-Agent Model Configuration** (OpenCode)
    - **What they have**: Different models for coder, task, title agents
+   - **Reference**: [OpenCode config.go](https://github.com/opencode-ai/opencode/blob/main/config/config.go) - See `Agents` struct with per-agent models
    - **Our system**: Fixed models per agent type (hardcoded in start script)
+   - **Our file**: [scripts/start-llama-servers.sh](../scripts/start-llama-servers.sh) - Hardcoded model paths
    - **Current**: All agents use same quantization/size within their role
    - **Enhancement**: Allow runtime model selection per agent
 
 7. **Declarative Tool Permissions** (Crush)
    - **What they have**: Project-level `allowed_tools` configuration
+   - **Reference**: [Crush config.go](https://github.com/charmbracelet/crush/blob/main/config/config.go) - See `AllowedTools` field
+   - **Config file**: [Crush .crush.json schema](https://charm.land/crush.json) - JSON schema with `allowedTools` array
    - **Our system**: No tool whitelisting/blacklisting
+   - **Our file**: Would add to new `.maker.json` config + [orchestrator/orchestrator.py](../orchestrator/orchestrator.py)
    - **Impact**: Can't restrict dangerous operations per project
    - **Implementation**:
      ```json
@@ -76,7 +88,9 @@ Based on analysis of OpenCode (archived) and its successor Crush by Charmbracele
 
 8. **Non-Interactive/Scripting Mode** (OpenCode)
    - **What they have**: `--quiet` flag, JSON output, auto-approve permissions
+   - **Reference**: [OpenCode main.go](https://github.com/opencode-ai/opencode/blob/main/main.go) - CLI flags: `--quiet`, `--format json`, `--yolo`
    - **Our system**: Always interactive via API
+   - **Our file**: [orchestrator/api_server.py](../orchestrator/api_server.py) - Would add query parameters
    - **Impact**: Can't use in CI/CD pipelines
    - **Use case**: Automated code reviews, batch processing
 
@@ -123,7 +137,10 @@ Based on analysis of Claude Code's system prompts and architecture, here are key
 
 4. **Tool Call Scaling**
    - **Claude Code**: "Scale the number of tool calls to query complexity"
+   - **Reference**: System prompts mention scaling tool calls to complexity
    - **Our system**: Fixed MAKER candidate count (N=5)
+   - **Our file**: [orchestrator/orchestrator.py:312-313](../orchestrator/orchestrator.py#L312-L313) - `MAKER_NUM_CANDIDATES=5`
+   - **Our file**: [orchestrator/orchestrator.py:686-723](../orchestrator/orchestrator.py#L686-L723) - `generate_candidates()` method
    - **Impact**: Waste compute on simple tasks, underutilize on complex tasks
    - **Implementation**:
      ```python
@@ -133,7 +150,9 @@ Based on analysis of Claude Code's system prompts and architecture, here are key
 
 5. **Avoid Unnecessary Tool Calls**
    - **Claude Code**: "Avoid tool calls if not needed" (explicit instruction)
+   - **Reference**: [System prompts repository](https://github.com/asgeirtj/system_prompts_leaks) - Search behavior guidelines
    - **Our system**: No explicit guidance to avoid unnecessary MCP calls
+   - **Our file**: [agents/planner-system.md](../agents/planner-system.md) - Would add guidance here
    - **Impact**: Planner always calls MCP even for simple questions
    - **Fix**: Add to Planner prompt: "Only use MCP tools when you need codebase-specific information"
 
@@ -166,9 +185,10 @@ Based on analysis of Claude Code's system prompts and architecture, here are key
 
 ### ❌ Missing: Intelligent Chunking Strategy
 - **What they have**: Semantic-aware chunking that respects code structure (function/class boundaries)
+- **Reference**: [open-docs chunking.py](https://github.com/bgauryy/open-docs/blob/main/src/chunking.py) - Semantic chunking implementation
 - **What we have**: Basic file reading without intelligent chunking (truncate at 3000 chars)
+- **Our file**: [orchestrator/orchestrator.py:1036-1043](../orchestrator/orchestrator.py#L1036-L1043) - Hardcoded 3000 char truncation
 - **Impact**: Large files overwhelm context windows; agents can't focus on relevant sections
-- **Location**: [orchestrator/orchestrator.py:1041](../orchestrator/orchestrator.py#L1041)
 
 **Implementation Needed:**
 ```python
