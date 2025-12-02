@@ -1112,7 +1112,8 @@ Vote for the BEST candidate that preserves narrative coherence. Reply with only:
 
         # Use semaphore to prevent mutex contention on llama.cpp servers
         # This ensures only one request per model server at a time
-        semaphore = self.request_queue.semaphores[agent]
+        # Use agent.value to get string key (works with any AgentName enum)
+        semaphore = self.request_queue.semaphores[agent.value]
 
         async with semaphore:
             # Track active requests
