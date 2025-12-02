@@ -859,32 +859,80 @@ Vote for the BEST candidate that preserves narrative coherence. Reply with only:
         except Exception as e:
             print(f"Warning: Failed to log skill usage for {skill_name}: {e}")
     
-    def _classify_request(self, user_input: str) -> str:
-        """Classify request type: 'simple_code', 'question', 'complex_code'"""
-        lower = user_input.lower().strip()
-        
-        question_patterns = [
-            "what do i need", "how do i", "how to", "what is", "what are", "what's",
-            "explain", "why", "can you tell", "tell me about", "tell me", "looking at", "analyze",
-            "deploy", "requirements", "dependencies", "understand", "describe",
-            "show me", "list", "find", "search", "about this", "this codebase",
-            "where is", "where are", "which", "does this", "is there", "are there",
-        ]
-        for p in question_patterns:
-            if p in lower:
+    async def _classify_request(self, user_input: str) -> str:
+        """
+        Classify request type using LLM intelligence: 'simple_code', 'question', 'complex_code'
+
+        This ensures accurate classification even with variations in phrasing.
+        """
+        classification_prompt = """You are a request classifier. Classify the user's request into ONE of these categories:
+
+1. "question" - User is asking for information, explanation, guidance, or analysis
+   Examples: "What would I need to do...", "How does X work?", "Could you explain...", "Tell me about..."
+
+2. "simple_code" - User wants a simple, straightforward code snippet (< 50 lines)
+   Examples: "Write a hello world", "Create a function to...", "Generate a simple..."
+
+3. "complex_code" - User wants code implementation, refactoring, or feature development
+   Examples: "Implement authentication", "Refactor this module", "Add error handling"
+
+Respond with ONLY the category name: question, simple_code, or complex_code"""
+
+        classification_request = f"""Classify this request:
+
+"{user_input}"
+
+Category:"""
+
+        # Use Preprocessor for fast classification
+        try:
+            response = ""
+            async for chunk in self.call_agent(AgentName.PREPROCESSOR, classification_prompt, classification_request, temperature=0.1, max_tokens=20):
+                response += chunk
+
+            classification = response.strip().lower()
+            # Extract just the category if LLM added extra text
+            if "question" in classification:
                 return "question"
-        
-        simple_patterns = [
-            "hello", "hi", "hey", "test", "ping",
-            "write a", "create a", "make a", "generate a",
-            "hello world", "fizzbuzz", "fibonacci", "factorial",
-            "function", "class", "script",
+            elif "simple_code" in classification or "simple" in classification:
+                return "simple_code"
+            elif "complex_code" in classification or "complex" in classification:
+                return "complex_code"
+            else:
+                # Fallback to pattern matching if LLM response is unclear
+                return self._classify_request_fallback(user_input)
+        except Exception as e:
+            print(f"[Warning] Classification failed: {e}, using fallback")
+            return self._classify_request_fallback(user_input)
+
+    def _classify_request_fallback(self, user_input: str) -> str:
+        """Fallback pattern-based classification if LLM classification fails"""
+        lower = user_input.lower().strip()
+
+        # Question keywords (broader patterns)
+        question_keywords = [
+            "what", "how", "why", "when", "where", "which", "who",
+            "explain", "tell me", "could you", "can you", "would you",
+            "describe", "analyze", "understand", "show me",
+            "is there", "are there", "does this", "do i", "should i",
         ]
-        if len(lower.split()) <= 15:
-            for p in simple_patterns:
-                if p in lower:
-                    return "simple_code"
-        
+        if any(kw in lower for kw in question_keywords) and "?" not in lower:
+            # Likely a question if has question word
+            return "question"
+
+        if "?" in lower:
+            # Explicit question mark
+            return "question"
+
+        # Code generation keywords
+        code_keywords = ["write", "create", "make", "generate", "implement", "add", "build", "develop"]
+        if any(kw in lower for kw in code_keywords):
+            # Check if it's a simple request (< 15 words)
+            if len(lower.split()) <= 15:
+                return "simple_code"
+            return "complex_code"
+
+        # Default to complex code for ambiguous requests
         return "complex_code"
     
     async def _simple_code_request(self, task_id: str, user_input: str) -> AsyncGenerator[str, None]:
@@ -990,8 +1038,8 @@ OR
 
     async def orchestrate_workflow(self, task_id: str, user_input: str) -> AsyncGenerator[str, None]:
         """Main orchestration loop: preprocess → plan → code → review"""
-        
-        request_type = self._classify_request(user_input)
+
+        request_type = await self._classify_request(user_input)
         
         if request_type == "simple_code":
             async for chunk in self._simple_code_request(task_id, user_input):
