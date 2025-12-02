@@ -43,6 +43,7 @@ Complete documentation for the MAKER (Multi-Agent Knowledge-Enhanced Reasoning) 
 ## Known Issues & Limitations
 
 - **[KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md)** - Current limitations and workarounds
+- **[MISSING_CAPABILITIES.md](MISSING_CAPABILITIES.md)** - Gap analysis vs leading AI coding assistants (open-docs, kilocode)
 
 ## Main Documentation
 
@@ -69,6 +70,7 @@ docs/
 ├── context-engineering-skills-analysis.md # Context patterns
 ├── skills-framework-clarification.md      # Skills framework
 ├── quickstart-memory-observability.md     # Memory & observability
+├── MISSING_CAPABILITIES.md                # Gap analysis vs competitors
 └── assets/                                # Architecture diagrams
     ├── README.md
     ├── ARCHITECTURE_DIAGRAM_PROMPT.md
