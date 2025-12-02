@@ -571,6 +571,42 @@ Instead of expecting the Planner to call tools, the **EE Planner** (orchestrator
 7. MAKER voting selects candidate that implements ALL 6 functions
 8. Reviewer validates all 6 functions present
 
+### Critical Coder Prompt Fix (User Insight)
+
+**User's Insight**: "Isn't the point of the Planner to decompose the task and instruct the Coder WHERE to look and WHAT to do?"
+
+**Absolutely correct!** The EE Planner fix above was architecturally wrong because:
+- ❌ Pre-reading files into Planner prompt bloats context unnecessarily
+- ❌ Makes Planner do the Coder's job (reading source code)
+- ❌ Defeats the purpose of task decomposition
+- ✅ Planner should say "Read X and convert to Y", Coder should execute it
+
+**Real Problem Discovered** ([agents/coder-system.md](agents/coder-system.md)):
+
+The Coder prompt had **conflicting instructions**:
+- Lines 10-16, 29, 37: "You have MCP tools, USE `read_file()`"
+- Lines 91-93: "You do NOT need to read files yourself, orchestrator provides them"
+
+**Result**: Coders saw file path but no source code, assumed they shouldn't call `read_file()`, refused with "I don't have access to files."
+
+**Fix Applied**:
+
+Clarified Coder's file reading behavior:
+- **If source code provided** in task context → use it directly, don't re-read
+- **If file path mentioned but NO source** → call `read_file()` yourself
+- **NEVER refuse** with "I don't have access" - you DO have the `read_file()` tool
+
+**Hybrid Approach (Best of Both Worlds)**:
+- EE Planner still pre-reads files (provides helpful context for planning)
+- Coder can ALSO call `read_file()` if needed (tool autonomy + fallback)
+- If EE Planner detection fails, Coder can still read the file itself
+
+**Correct Flow**:
+1. Planner: "Read formatting.ts and convert ALL functions to Rust"
+2. Coder: Sees task mentions file, calls `read_file("formatting.ts")`
+3. Coder: Reads 6 functions, implements all 6 in Rust
+4. No more refusals, no more guessing content
+
 ---
 
 ## Summary
