@@ -8,10 +8,100 @@ Comparison of our MAKER system against leading AI coding assistants to identify 
 - **[kilocode](https://github.com/Kilo-Org/kilocode)** - AI-powered code editor with multi-mode architecture
 - **[Claude Code](https://github.com/ghuntley/claude-code-source-code-deobfuscation)** - Anthropic's official agentic coding CLI
 - **[System Prompts](https://github.com/asgeirtj/system_prompts_leaks)** - Leaked system prompts revealing Claude Code design patterns
+- **[OpenCode](https://github.com/opencode-ai/opencode)** - Terminal AI agent with auto-compact context (archived, moved to Crush)
+- **[Crush](https://github.com/charmbracelet/crush)** - Multi-model terminal agent with LSP integration and mid-session model switching
 
 ---
 
-## 1. Claude Code Design Patterns (from leaked prompts)
+## 1. OpenCode/Crush Advanced Features (terminal AI agents)
+
+Based on analysis of OpenCode (archived) and its successor Crush by Charmbracelet:
+
+### ✅ Already Implemented
+
+1. **Session Management**
+   - Our system: Session persistence via Redis with resume capability
+   - Status: ✅ Implemented ([orchestrator/session_manager.py](../orchestrator/session_manager.py))
+
+2. **MCP Integration**
+   - Our system: MCP server with codebase tools
+   - Status: ✅ Implemented ([orchestrator/mcp_server.py](../orchestrator/mcp_server.py))
+
+### ❌ Missing: Critical Features
+
+3. **Auto-Compact Context Management** (OpenCode)
+   - **What they have**: Monitors token usage, auto-triggers summarization at 95% of context window
+   - **Our system**: Manual compression via ContextCompressor, no automatic threshold
+   - **Impact**: Risk of hitting context limits unexpectedly
+   - **Implementation**:
+     ```python
+     async def compress_if_needed(self) -> bool:
+         # Current: Only compresses if exceeds max_context_tokens
+         # Need: Auto-compress at 95% threshold proactively
+         usage_percent = (total_tokens / self.max_context_tokens)
+         if usage_percent >= 0.95:  # Auto-compact threshold
+             await self._compress_now()
+     ```
+
+4. **LSP Integration** (Crush)
+   - **What they have**: Language Server Protocol for semantic code understanding
+   - **Our system**: File reading only, no LSP
+   - **Impact**: No type information, definitions, or references beyond grep
+   - **Value**: Semantic code intelligence (go-to-definition, find-references, type hints)
+   - **Implementation**: 12-16 hours
+
+5. **Mid-Session Model Switching** (Crush)
+   - **What they have**: Switch between models while preserving conversation context
+   - **Our system**: Fixed model per agent, requires restart to change
+   - **Impact**: Can't adapt to task complexity changes during conversation
+   - **Use case**: Start with fast model, switch to powerful model for complex subtask
+
+6. **Per-Agent Model Configuration** (OpenCode)
+   - **What they have**: Different models for coder, task, title agents
+   - **Our system**: Fixed models per agent type (hardcoded in start script)
+   - **Current**: All agents use same quantization/size within their role
+   - **Enhancement**: Allow runtime model selection per agent
+
+7. **Declarative Tool Permissions** (Crush)
+   - **What they have**: Project-level `allowed_tools` configuration
+   - **Our system**: No tool whitelisting/blacklisting
+   - **Impact**: Can't restrict dangerous operations per project
+   - **Implementation**:
+     ```json
+     {
+       "allowed_tools": ["read_file", "search_docs"],
+       "blocked_tools": ["run_tests"]
+     }
+     ```
+
+8. **Non-Interactive/Scripting Mode** (OpenCode)
+   - **What they have**: `--quiet` flag, JSON output, auto-approve permissions
+   - **Our system**: Always interactive via API
+   - **Impact**: Can't use in CI/CD pipelines
+   - **Use case**: Automated code reviews, batch processing
+
+### ⚠️ Partial Implementation
+
+9. **Configuration Hierarchy** (Crush)
+   - **What they have**: Project `.crush.json` → Root `crush.json` → Global `~/.config/crush/`
+   - **Our system**: Only environment variables and docker-compose.yml
+   - **Status**: ⚠️ Partial (no project-level config files)
+   - **Enhancement**: Support `.maker.json` in project root
+
+10. **Attribution System** (Crush)
+    - **What they have**: Configurable git attribution (assisted-by, co-authored-by, none)
+    - **Our system**: No automatic attribution
+    - **Status**: ⚠️ Could add via git commit templates
+
+### 🔵 Not Applicable to Our Architecture
+
+- **Terminal UI (Bubble Tea)**: We're API-focused, not TUI
+- **Vim keybindings**: Not applicable to API
+- **External editor integration**: Not relevant for Continue.dev integration
+
+---
+
+## 2. Claude Code Design Patterns (from leaked prompts)
 
 Based on analysis of Claude Code's system prompts and architecture, here are key patterns we should adopt:
 
@@ -255,86 +345,120 @@ def run_command(self, command: str, cwd: Optional[str] = None) -> str:
 
 ### 🔴 Critical (Immediate Impact)
 
-1. **Tool Call Scaling** (Claude Code)
+1. **Auto-Compact Context** (OpenCode)
+   - Proactive compression at 95% threshold
+   - Implementation: 1-2 hours
+   - Files: `orchestrator/orchestrator.py` (ContextCompressor)
+   - **Why first**: Prevents context overflow errors
+
+2. **Tool Call Scaling** (Claude Code)
    - Scale MAKER candidates based on task complexity
    - Implementation: 1-2 hours
    - Files: `orchestrator/orchestrator.py`
-   - **Why first**: Low effort, immediate compute savings
+   - **Why critical**: Low effort, immediate compute savings
 
-2. **Intelligent File Chunking** (open-docs)
+3. **Intelligent File Chunking** (open-docs)
    - Biggest quality improvement for large files
    - Implementation: 4-6 hours
    - Files: `orchestrator/mcp_server.py`, `orchestrator/orchestrator.py`
 
-3. **Avoid Unnecessary Tool Calls** (Claude Code)
+4. **Avoid Unnecessary Tool Calls** (Claude Code)
    - Add prompt guidance to skip MCP when not needed
    - Implementation: 30 minutes
    - Files: `agents/planner-system.md`
    - **Why critical**: Reduces latency on simple questions
 
-4. **Confidence Scoring** (open-docs)
+5. **Confidence Scoring** (open-docs)
    - Filter low-quality retrieval results
    - Implementation: 2-3 hours
    - Files: `orchestrator/rag_service_faiss.py`
 
-5. **Self-Verification Loop** (kilocode)
+6. **Self-Verification Loop** (kilocode)
    - Prevent broken code from being returned
    - Implementation: 3-4 hours
    - Files: `orchestrator/orchestrator.py`
 
 ### 🟡 High Priority (Quality Improvements)
 
-6. **Hybrid Retrieval** (open-docs)
+7. **Hybrid Retrieval** (open-docs)
    - Combine semantic + keyword search
    - Implementation: 4-5 hours
    - Files: `orchestrator/mcp_server.py`, `orchestrator/rag_service_faiss.py`
 
-7. **Hierarchical Prompt Structure** (Claude Code)
+8. **Declarative Tool Permissions** (Crush)
+   - Project-level allowed/blocked tools configuration
+   - Implementation: 2-3 hours
+   - Files: `orchestrator/orchestrator.py`, add `.maker.json` support
+   - **Benefit**: Safety controls per project
+
+9. **Hierarchical Prompt Structure** (Claude Code)
    - Restructure agent prompts with clear sections
    - Implementation: 3-4 hours
    - Files: `agents/*.md`
    - **Benefit**: Easier to maintain and override specific behaviors
 
-8. **Multi-Mode Architecture** (kilocode + Claude Code Plan Mode)
-   - Specialized workflows (Architect, Coder, Debugger, Plan)
-   - Implementation: 8-10 hours
-   - Files: `orchestrator/orchestrator.py`, `agents/*.md`
+10. **Multi-Mode Architecture** (kilocode + Claude Code Plan Mode)
+    - Specialized workflows (Architect, Coder, Debugger, Plan)
+    - Implementation: 8-10 hours
+    - Files: `orchestrator/orchestrator.py`, `agents/*.md`
 
-9. **Terminal Integration** (kilocode)
-   - Execute build/test commands
-   - Implementation: 3-4 hours
-   - Files: `orchestrator/mcp_server.py`
+11. **Terminal Integration** (kilocode)
+    - Execute build/test commands
+    - Implementation: 3-4 hours
+    - Files: `orchestrator/mcp_server.py`
 
 ### 🟢 Medium Priority (Nice-to-Have)
 
-10. **Caching Layer** (open-docs)
+12. **Caching Layer** (open-docs)
     - Speed up repeated queries
     - Implementation: 4-5 hours
     - Files: `orchestrator/mcp_server.py`, `orchestrator/rag_service_faiss.py`
 
-11. **Contextual Re-ranking** (open-docs)
+13. **Contextual Re-ranking** (open-docs)
     - Task-aware result ordering
     - Implementation: 3-4 hours
     - Files: `orchestrator/rag_service_faiss.py`
 
-12. **Automated Refactoring Agent** (kilocode)
+14. **Non-Interactive/Scripting Mode** (OpenCode)
+    - API flags for quiet mode, JSON output, auto-approve
+    - Implementation: 3-4 hours
+    - Files: `orchestrator/api_server.py`
+    - **Use case**: CI/CD integration
+
+15. **Configuration Hierarchy** (Crush)
+    - Support `.maker.json` at project/root/global levels
+    - Implementation: 4-5 hours
+    - Files: `orchestrator/orchestrator.py`
+
+16. **Automated Refactoring Agent** (kilocode)
     - Dedicated refactoring workflows
     - Implementation: 6-8 hours
     - Files: `orchestrator/orchestrator.py`, `agents/refactorer-system.md`
 
-13. **Expand Long-Running Support** (Claude Code)
+17. **Expand Long-Running Support** (Claude Code)
     - Full support for long-running commands with streaming
     - Implementation: 6-8 hours
     - Files: `orchestrator/orchestrator.py`, `orchestrator/session_manager.py`
 
 ### 🔵 Low Priority (Future Enhancements)
 
-14. **MCP Server Marketplace** (kilocode)
+18. **LSP Integration** (Crush)
+    - Language Server Protocol for semantic intelligence
+    - Implementation: 12-16 hours
+    - Requires: LSP client library, per-language server configs
+    - **High value** but significant effort
+
+19. **Mid-Session Model Switching** (Crush)
+    - Switch models mid-conversation with context preservation
+    - Implementation: 8-10 hours
+    - Requires: Dynamic model loading architecture
+
+20. **MCP Server Marketplace** (kilocode)
     - Dynamic capability loading
     - Implementation: 12-16 hours
     - Requires: Architecture redesign
 
-15. **Browser Automation** (kilocode)
+21. **Browser Automation** (kilocode)
     - Web testing integration
     - Implementation: 8-10 hours
     - Requires: Playwright/Puppeteer integration
@@ -343,27 +467,32 @@ def run_command(self, command: str, cwd: Optional[str] = None) -> str:
 
 ## Recommended Next Steps
 
-### Quick Wins (Week 1 - 10 hours total)
+### Quick Wins (Week 1 - 11 hours total)
 
-1. **Tool Call Scaling** (1-2 hours) - Immediate compute savings
-2. **Avoid Unnecessary Tool Calls** (30 min) - Add prompt guidance
-3. **Intelligent File Chunking** (4-6 hours) - Major quality improvement
-4. **Confidence Scoring** (2-3 hours) - Filter low-quality results
+1. **Auto-Compact Context** (1-2 hours) - OpenCode - Prevents context overflow
+2. **Tool Call Scaling** (1-2 hours) - Claude Code - Immediate compute savings
+3. **Avoid Unnecessary Tool Calls** (30 min) - Claude Code - Add prompt guidance
+4. **Intelligent File Chunking** (4-6 hours) - open-docs - Major quality improvement
+5. **Confidence Scoring** (2-3 hours) - open-docs - Filter low-quality results
 
-### Quality Improvements (Week 2 - 12 hours total)
+### Quality Improvements (Week 2 - 14 hours total)
 
-5. **Self-Verification Loop** (3-4 hours) - Prevent broken code
-6. **Hybrid Retrieval** (4-5 hours) - Semantic + keyword search
-7. **Hierarchical Prompt Structure** (3-4 hours) - Easier maintenance
+6. **Self-Verification Loop** (3-4 hours) - kilocode - Prevent broken code
+7. **Hybrid Retrieval** (4-5 hours) - open-docs - Semantic + keyword search
+8. **Declarative Tool Permissions** (2-3 hours) - Crush - Project safety controls
+9. **Hierarchical Prompt Structure** (3-4 hours) - Claude Code - Easier maintenance
 
-### Advanced Features (Week 3-4 - 20 hours total)
+### Advanced Features (Week 3-4 - 24 hours total)
 
-8. **Multi-Mode Architecture** (8-10 hours) - Specialized workflows
-9. **Terminal Integration** (3-4 hours) - Build/test execution
-10. **Caching Layer** (4-5 hours) - Speed optimization
-11. **Contextual Re-ranking** (3-4 hours) - Better result ordering
+10. **Multi-Mode Architecture** (8-10 hours) - kilocode + Claude Code - Specialized workflows
+11. **Terminal Integration** (3-4 hours) - kilocode - Build/test execution
+12. **Non-Interactive Mode** (3-4 hours) - OpenCode - CI/CD integration
+13. **Configuration Hierarchy** (4-5 hours) - Crush - Project-level configs
+14. **Caching Layer** (4-5 hours) - open-docs - Speed optimization
 
-This implementation plan incorporates learnings from Claude Code, open-docs, and kilocode while maintaining our unique MAKER voting, EE Memory, and local-first advantages.
+This implementation plan incorporates learnings from **6 leading AI coding tools** (Claude Code, open-docs, kilocode, OpenCode, Crush, system prompts) while maintaining our unique MAKER voting, EE Memory, and local-first advantages.
+
+**Total: 21 prioritized enhancements** across Critical (6), High Priority (5), Medium Priority (6), Low Priority (4).
 
 ---
 
