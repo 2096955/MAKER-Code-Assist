@@ -499,6 +499,31 @@ COMPLETE: "Looks good. All 6 functions implemented correctly."
 - Reviewer approves incomplete code
 - 90% of functionality goes missing
 
+### Critical Bug Fix (Post-Implementation)
+
+**Problem Discovered**: After implementing the three-layer validation, testing revealed the Planner was creating correct subtask plans but **not actually executing** `read_file()` to get source code.
+
+**Symptom**: All 5 Coder candidates refused with "I can't access files" because they never received the source code.
+
+**Root Cause**: Planner prompt showed `read_file()` as part of the plan output (documentation), not as a tool to execute immediately.
+
+**Fix Applied** ([agents/planner-system.md](agents/planner-system.md)):
+
+1. **Step 1 header**: Changed to "Read and Inventory (EXECUTE THIS IMMEDIATELY)"
+   - FIRST: Call MCP tool `read_file(path)` RIGHT NOW
+   - THEN: After seeing contents, list functions/classes
+   - DO NOT SKIP: Must actually call and see contents
+
+2. **Tools section**: Added critical note at top
+   - "These are REAL tools you can call"
+   - "Don't just mention them in your plan - USE them!"
+
+3. **Example updated**: Shows Planner actually executing the tool
+   - Before: "1. Read source file: read_file(...)" (just text)
+   - After: "[Planner calls: read_file(...)] [Planner receives contents...]" (execution shown)
+
+**Impact**: Planner will now actually read files before planning conversions, ensuring Coder agents receive the source code they need to generate complete implementations.
+
 ---
 
 ## Summary
