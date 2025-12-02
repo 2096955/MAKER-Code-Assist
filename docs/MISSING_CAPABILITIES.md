@@ -183,21 +183,18 @@ Based on analysis of Claude Code's system prompts and architecture, here are key
 
 ## 2. Documentation & RAG Capabilities (vs open-docs)
 
-### ❌ Missing: Intelligent Chunking Strategy
+### ✅ Implemented: Intelligent Chunking Strategy
+
 - **What they have**: Semantic-aware chunking that respects code structure (function/class boundaries)
 - **Reference**: [open-docs chunking.py](https://github.com/bgauryy/open-docs/blob/main/src/chunking.py) - Semantic chunking implementation
-- **What we have**: Basic file reading without intelligent chunking (truncate at 3000 chars)
-- **Our file**: [orchestrator/orchestrator.py:1036-1043](../orchestrator/orchestrator.py#L1036-L1043) - Hardcoded 3000 char truncation
-- **Impact**: Large files overwhelm context windows; agents can't focus on relevant sections
-
-**Implementation Needed:**
-```python
-def read_file_chunked(self, path: str, chunk_size: int = 100) -> List[Dict[str, Any]]:
-    """
-    Read file with semantic-aware chunking (respects function/class boundaries)
-    Returns: [{text, start_line, end_line, chunk_type: "function|class|module"}]
-    """
-```
+- **What we now have**: AST-based semantic chunking for Python files ([orchestrator/mcp_server.py:44-162](../orchestrator/mcp_server.py#L44-L162))
+- **Features**:
+  - Respects function/class boundaries using AST parsing
+  - Auto-detects large files (>5000 chars) and chunks automatically
+  - Returns metadata: `{text, start_line, end_line, chunk_type, name}`
+  - Falls back to line-based chunking (100 lines) if AST parsing fails
+  - Non-Python files: Truncate with note indicating file size
+- **Status**: ✅ **Completed** (Priority #3 from Week 1 Quick Wins)
 
 ### ⚠️ Partial: Multi-Level Retrieval
 - **What they have**: Hybrid search combining lexical (keyword) + semantic (embeddings)

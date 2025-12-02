@@ -37,6 +37,7 @@ from pathlib import Path
 from orchestrator.ee_memory import HierarchicalMemoryNetwork
 from orchestrator.agent_memory import AgentMemoryNetwork
 from orchestrator.melodic_detector import MelodicLineDetector
+from orchestrator.request_queue import RequestQueueManager
 
 # EE Planner (Spec-compliant)
 from orchestrator.ee_planner import EEPlannerAgent, EnhancedSubtask
@@ -456,6 +457,10 @@ class Orchestrator:
         self._ee_planner = None
         self._mcp_client_wrapper = None
         
+        # Request queue manager: Prevents mutex contention on llama.cpp servers
+        self.request_queue = RequestQueueManager(max_concurrent_per_model=1)
+        print("[Orchestrator] Request queue initialized (sequential processing per model)")
+
         # Long-running support (Phase 1)
         self.enable_long_running = os.getenv("ENABLE_LONG_RUNNING", "false").lower() == "true"
         if self.enable_long_running:
@@ -771,26 +776,38 @@ class Orchestrator:
     
     async def call_agent_sync(self, agent: AgentName, system_prompt: str,
                               user_message: str, temperature: float = 0.7) -> str:
-        """Non-streaming call to agent, returns full response"""
-        async with httpx.AsyncClient(timeout=self.agent_timeout) as client:
-            payload = {
-                "model": "default",
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message}
-                ],
-                "temperature": temperature,
-                "max_tokens": 4096,
-                "stream": False
-            }
+        """Non-streaming call to agent, returns full response (with request queueing)"""
+
+        # Use semaphore to prevent mutex contention
+        semaphore = self.request_queue.semaphores[agent]
+
+        async with semaphore:
+            # Track active requests
+            self.request_queue.active_requests[agent] += 1
+            self.request_queue.request_counts[agent] += 1
+
             try:
-                response = await client.post(self.endpoints[agent], json=payload)
-                if response.status_code == 200:
-                    data = response.json()
-                    return data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                return f"Error: {response.status_code}"
-            except Exception as e:
-                return f"Error: {str(e)}"
+                async with httpx.AsyncClient(timeout=self.agent_timeout) as client:
+                    payload = {
+                        "model": "default",
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_message}
+                        ],
+                        "temperature": temperature,
+                        "max_tokens": 4096,
+                        "stream": False
+                    }
+                    try:
+                        response = await client.post(self.endpoints[agent], json=payload)
+                        if response.status_code == 200:
+                            data = response.json()
+                            return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                        return f"Error: {response.status_code}"
+                    except Exception as e:
+                        return f"Error: {str(e)}"
+            finally:
+                self.request_queue.active_requests[agent] -= 1
     
     def _is_safe_file_path(self, file_path: str) -> bool:
         """
@@ -1024,34 +1041,14 @@ Vote for the BEST candidate that preserves narrative coherence. Reply with only:
             
             return candidates[winner_idx], vote_counts
     
-    async def call_agent(self, agent: AgentName, system_prompt: str, 
-                         user_message: str, temperature: float = 0.7,
-                         max_tokens: int = 2048) -> AsyncGenerator[str, None]:
-        """Stream response from llama.cpp Metal agent"""
-        
-        # Find relevant skills if enabled
-        if self.enable_skills and self.skill_matcher:
-            skills = self.skill_matcher.find_relevant_skills(user_message, top_k=2)
-            
-            if skills:
-                # Augment system prompt with skills
-                skills_section = "\n\n## Available Proven Patterns\n"
-                skills_section += "The following proven coding patterns may be helpful for this task:\n\n"
-                for skill in skills:
-                    skills_section += f"### {skill.name}\n"
-                    skills_section += f"{skill.description}\n\n"
-                    # Include key instructions (truncated for context)
-                    instructions_preview = skill.instructions[:800]  # Limit length
-                    if len(skill.instructions) > 800:
-                        instructions_preview += "\n\n[... see full skill for complete instructions ...]"
-                    skills_section += f"{instructions_preview}\n\n---\n\n"
-                
-                system_prompt = system_prompt + skills_section
-                
-                # Log skill usage
-                for skill in skills:
-                    self._log_skill_usage(skill.name)
-        
+    async def _call_agent_http(self, agent: AgentName, system_prompt: str,
+                               user_message: str, temperature: float,
+                               max_tokens: int) -> AsyncGenerator[str, None]:
+        """
+        Internal method: Make HTTP request to llama.cpp server (without queue).
+
+        This is wrapped by call_agent() which adds request queueing.
+        """
         async with httpx.AsyncClient(timeout=self.agent_timeout) as client:
             payload = {
                 "model": "default",
@@ -1063,13 +1060,13 @@ Vote for the BEST candidate that preserves narrative coherence. Reply with only:
                 "max_tokens": max_tokens,
                 "stream": True
             }
-            
+
             try:
                 async with client.stream("POST", self.endpoints[agent], json=payload) as response:
                     if response.status_code != 200:
                         yield f" Agent error: {response.status_code}\n"
                         return
-                    
+
                     async for line in response.aiter_lines():
                         if line.startswith("data: "):
                             try:
@@ -1084,6 +1081,52 @@ Vote for the BEST candidate that preserves narrative coherence. Reply with only:
                                 pass
             except Exception as e:
                 yield f" Agent call failed: {str(e)}\n"
+
+    async def call_agent(self, agent: AgentName, system_prompt: str,
+                         user_message: str, temperature: float = 0.7,
+                         max_tokens: int = 2048) -> AsyncGenerator[str, None]:
+        """Stream response from llama.cpp Metal agent (with request queueing)"""
+
+        # Find relevant skills if enabled
+        if self.enable_skills and self.skill_matcher:
+            skills = self.skill_matcher.find_relevant_skills(user_message, top_k=2)
+
+            if skills:
+                # Augment system prompt with skills
+                skills_section = "\n\n## Available Proven Patterns\n"
+                skills_section += "The following proven coding patterns may be helpful for this task:\n\n"
+                for skill in skills:
+                    skills_section += f"### {skill.name}\n"
+                    skills_section += f"{skill.description}\n\n"
+                    # Include key instructions (truncated for context)
+                    instructions_preview = skill.instructions[:800]  # Limit length
+                    if len(skill.instructions) > 800:
+                        instructions_preview += "\n\n[... see full skill for complete instructions ...]"
+                    skills_section += f"{instructions_preview}\n\n---\n\n"
+
+                system_prompt = system_prompt + skills_section
+
+                # Log skill usage
+                for skill in skills:
+                    self._log_skill_usage(skill.name)
+
+        # Use semaphore to prevent mutex contention on llama.cpp servers
+        # This ensures only one request per model server at a time
+        semaphore = self.request_queue.semaphores[agent]
+
+        async with semaphore:
+            # Track active requests
+            self.request_queue.active_requests[agent] += 1
+            self.request_queue.request_counts[agent] += 1
+
+            try:
+                # Execute HTTP request while holding semaphore
+                async for chunk in self._call_agent_http(
+                    agent, system_prompt, user_message, temperature, max_tokens
+                ):
+                    yield chunk
+            finally:
+                self.request_queue.active_requests[agent] -= 1
     
     def _log_skill_usage(self, skill_name: str):
         """
@@ -1588,7 +1631,7 @@ Create an execution plan with tasks that preserves thematic flows. Use MCP tools
             
             # If converting a file, ensure Coder has the source code
             source_code_context = ""
-            if any(kw in user_input.lower() for kw in ["convert", "translate", "port", "rewrite"]):
+            if any(kw in user_input.lower() or kw in preprocessed_text.lower() for kw in ["convert", "translate", "port", "rewrite"]):
                 import re
                 # Match file paths more flexibly - handle absolute paths with spaces/special chars
                 # Pattern: /Users/.../file.ext or path/to/file.ext
@@ -1600,10 +1643,17 @@ Create an execution plan with tasks that preserves thematic flows. Use MCP tools
                 ]
                 
                 file_path = None
-                for pattern in path_patterns:
-                    path_match = re.search(pattern, user_input)
-                    if path_match:
-                        file_path = path_match.group(1)
+                # Search in both user_input and preprocessed_text (preprocessor may have added file path)
+                search_texts = [user_input, preprocessed_text]
+                for search_text in search_texts:
+                    for pattern in path_patterns:
+                        path_match = re.search(pattern, search_text)
+                        if path_match:
+                            file_path = path_match.group(1)
+                            # Validate it's a real file path (not just a word ending in .ts)
+                            if '/' in file_path or file_path.startswith('/'):
+                                break
+                    if file_path and ('/' in file_path or file_path.startswith('/')):
                         break
                 
                 if file_path:
