@@ -6,10 +6,73 @@ Comparison of our MAKER system against leading AI coding assistants to identify 
 
 - **[open-docs](https://github.com/bgauryy/open-docs)** - RAG system for documentation with intelligent chunking
 - **[kilocode](https://github.com/Kilo-Org/kilocode)** - AI-powered code editor with multi-mode architecture
+- **[Claude Code](https://github.com/ghuntley/claude-code-source-code-deobfuscation)** - Anthropic's official agentic coding CLI
+- **[System Prompts](https://github.com/asgeirtj/system_prompts_leaks)** - Leaked system prompts revealing Claude Code design patterns
 
 ---
 
-## 1. Documentation & RAG Capabilities (vs open-docs)
+## 1. Claude Code Design Patterns (from leaked prompts)
+
+Based on analysis of Claude Code's system prompts and architecture, here are key patterns we should adopt:
+
+### ✅ Already Implemented
+
+1. **Read-Before-Write Pattern**
+   - Our system: Edit tool requires prior Read ([orchestrator/orchestrator.py](../orchestrator/orchestrator.py))
+   - Status: ✅ Implemented in CLAUDE.md instructions
+
+2. **Parallel Tool Execution**
+   - Our system: TodoWrite instructions specify parallel execution for independent tools
+   - Status: ✅ Documented pattern (but agents don't always follow it)
+
+3. **Git Safety Rules**
+   - Our system: Git workflow documented with safety checks
+   - Status: ✅ Documented in CLAUDE.md
+
+### ❌ Missing: Advanced Patterns
+
+4. **Tool Call Scaling**
+   - **Claude Code**: "Scale the number of tool calls to query complexity"
+   - **Our system**: Fixed MAKER candidate count (N=5)
+   - **Impact**: Waste compute on simple tasks, underutilize on complex tasks
+   - **Implementation**:
+     ```python
+     def get_candidate_count(task_complexity: str) -> int:
+         return {"simple": 2, "medium": 5, "complex": 8}[task_complexity]
+     ```
+
+5. **Avoid Unnecessary Tool Calls**
+   - **Claude Code**: "Avoid tool calls if not needed" (explicit instruction)
+   - **Our system**: No explicit guidance to avoid unnecessary MCP calls
+   - **Impact**: Planner always calls MCP even for simple questions
+   - **Fix**: Add to Planner prompt: "Only use MCP tools when you need codebase-specific information"
+
+6. **Behavioral Guidelines Structure**
+   - **Claude Code**: Hierarchical prompts (identity → tools → safety → context)
+   - **Our system**: Flat system prompts in `agents/*.md`
+   - **Impact**: Hard to override safety rules without rewriting entire prompts
+   - **Enhancement**: Restructure prompts with clear sections
+
+7. **Long-Running Command Support**
+   - **Claude Code**: Explicit support for long-running commands (noted as improvement area)
+   - **Our system**: Has ENABLE_LONG_RUNNING but limited implementation
+   - **Status**: ⚠️ Partial (Phase 1 implemented, needs expansion)
+
+8. **Plan Mode**
+   - **Claude Code**: Has dedicated `claude-code-plan-mode.md` prompt
+   - **Our system**: Planning happens in normal workflow
+   - **Impact**: No distinction between exploration and implementation
+   - **Link to**: Multi-mode architecture (kilocode similarity)
+
+### 🔵 Claude Code Unique Features Not Applicable
+
+- **Artifacts**: Web UI feature for rendering code/documents (we're CLI-focused)
+- **Web Search/Fetch**: We're codebase-focused, not web-focused
+- **Google Integrations**: Not applicable to coding assistant
+
+---
+
+## 2. Documentation & RAG Capabilities (vs open-docs)
 
 ### ❌ Missing: Intelligent Chunking Strategy
 - **What they have**: Semantic-aware chunking that respects code structure (function/class boundaries)
@@ -192,63 +255,86 @@ def run_command(self, command: str, cwd: Optional[str] = None) -> str:
 
 ### 🔴 Critical (Immediate Impact)
 
-1. **Intelligent File Chunking** (open-docs)
+1. **Tool Call Scaling** (Claude Code)
+   - Scale MAKER candidates based on task complexity
+   - Implementation: 1-2 hours
+   - Files: `orchestrator/orchestrator.py`
+   - **Why first**: Low effort, immediate compute savings
+
+2. **Intelligent File Chunking** (open-docs)
    - Biggest quality improvement for large files
    - Implementation: 4-6 hours
    - Files: `orchestrator/mcp_server.py`, `orchestrator/orchestrator.py`
 
-2. **Confidence Scoring** (open-docs)
+3. **Avoid Unnecessary Tool Calls** (Claude Code)
+   - Add prompt guidance to skip MCP when not needed
+   - Implementation: 30 minutes
+   - Files: `agents/planner-system.md`
+   - **Why critical**: Reduces latency on simple questions
+
+4. **Confidence Scoring** (open-docs)
    - Filter low-quality retrieval results
    - Implementation: 2-3 hours
    - Files: `orchestrator/rag_service_faiss.py`
 
-3. **Self-Verification Loop** (kilocode)
+5. **Self-Verification Loop** (kilocode)
    - Prevent broken code from being returned
    - Implementation: 3-4 hours
    - Files: `orchestrator/orchestrator.py`
 
 ### 🟡 High Priority (Quality Improvements)
 
-4. **Hybrid Retrieval** (open-docs)
+6. **Hybrid Retrieval** (open-docs)
    - Combine semantic + keyword search
    - Implementation: 4-5 hours
    - Files: `orchestrator/mcp_server.py`, `orchestrator/rag_service_faiss.py`
 
-5. **Multi-Mode Architecture** (kilocode)
-   - Specialized workflows for different tasks
+7. **Hierarchical Prompt Structure** (Claude Code)
+   - Restructure agent prompts with clear sections
+   - Implementation: 3-4 hours
+   - Files: `agents/*.md`
+   - **Benefit**: Easier to maintain and override specific behaviors
+
+8. **Multi-Mode Architecture** (kilocode + Claude Code Plan Mode)
+   - Specialized workflows (Architect, Coder, Debugger, Plan)
    - Implementation: 8-10 hours
    - Files: `orchestrator/orchestrator.py`, `agents/*.md`
 
-6. **Terminal Integration** (kilocode)
+9. **Terminal Integration** (kilocode)
    - Execute build/test commands
    - Implementation: 3-4 hours
    - Files: `orchestrator/mcp_server.py`
 
 ### 🟢 Medium Priority (Nice-to-Have)
 
-7. **Caching Layer** (open-docs)
-   - Speed up repeated queries
-   - Implementation: 4-5 hours
-   - Files: `orchestrator/mcp_server.py`, `orchestrator/rag_service_faiss.py`
+10. **Caching Layer** (open-docs)
+    - Speed up repeated queries
+    - Implementation: 4-5 hours
+    - Files: `orchestrator/mcp_server.py`, `orchestrator/rag_service_faiss.py`
 
-8. **Contextual Re-ranking** (open-docs)
-   - Task-aware result ordering
-   - Implementation: 3-4 hours
-   - Files: `orchestrator/rag_service_faiss.py`
+11. **Contextual Re-ranking** (open-docs)
+    - Task-aware result ordering
+    - Implementation: 3-4 hours
+    - Files: `orchestrator/rag_service_faiss.py`
 
-9. **Automated Refactoring Agent** (kilocode)
-   - Dedicated refactoring workflows
-   - Implementation: 6-8 hours
-   - Files: `orchestrator/orchestrator.py`, `agents/refactorer-system.md`
+12. **Automated Refactoring Agent** (kilocode)
+    - Dedicated refactoring workflows
+    - Implementation: 6-8 hours
+    - Files: `orchestrator/orchestrator.py`, `agents/refactorer-system.md`
+
+13. **Expand Long-Running Support** (Claude Code)
+    - Full support for long-running commands with streaming
+    - Implementation: 6-8 hours
+    - Files: `orchestrator/orchestrator.py`, `orchestrator/session_manager.py`
 
 ### 🔵 Low Priority (Future Enhancements)
 
-10. **MCP Server Marketplace** (kilocode)
+14. **MCP Server Marketplace** (kilocode)
     - Dynamic capability loading
     - Implementation: 12-16 hours
     - Requires: Architecture redesign
 
-11. **Browser Automation** (kilocode)
+15. **Browser Automation** (kilocode)
     - Web testing integration
     - Implementation: 8-10 hours
     - Requires: Playwright/Puppeteer integration
@@ -257,12 +343,27 @@ def run_command(self, command: str, cwd: Optional[str] = None) -> str:
 
 ## Recommended Next Steps
 
-1. **Week 1**: Implement intelligent file chunking + confidence scoring
-2. **Week 2**: Add self-verification loop + hybrid retrieval
-3. **Week 3**: Implement multi-mode architecture
-4. **Week 4**: Add terminal integration + caching
+### Quick Wins (Week 1 - 10 hours total)
 
-This would bring us to feature parity with leading AI coding assistants while maintaining our unique MAKER voting and local-first advantages.
+1. **Tool Call Scaling** (1-2 hours) - Immediate compute savings
+2. **Avoid Unnecessary Tool Calls** (30 min) - Add prompt guidance
+3. **Intelligent File Chunking** (4-6 hours) - Major quality improvement
+4. **Confidence Scoring** (2-3 hours) - Filter low-quality results
+
+### Quality Improvements (Week 2 - 12 hours total)
+
+5. **Self-Verification Loop** (3-4 hours) - Prevent broken code
+6. **Hybrid Retrieval** (4-5 hours) - Semantic + keyword search
+7. **Hierarchical Prompt Structure** (3-4 hours) - Easier maintenance
+
+### Advanced Features (Week 3-4 - 20 hours total)
+
+8. **Multi-Mode Architecture** (8-10 hours) - Specialized workflows
+9. **Terminal Integration** (3-4 hours) - Build/test execution
+10. **Caching Layer** (4-5 hours) - Speed optimization
+11. **Contextual Re-ranking** (3-4 hours) - Better result ordering
+
+This implementation plan incorporates learnings from Claude Code, open-docs, and kilocode while maintaining our unique MAKER voting, EE Memory, and local-first advantages.
 
 ---
 
