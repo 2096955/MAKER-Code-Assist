@@ -969,48 +969,54 @@ Be direct. Output working code in a markdown code block. No questions."""
             yield f"- \"What would I need to translate this Python code to Rust?\"\n\n"
             return
 
-        # Get codebase context for codebase-related questions
-        codebase_keywords = ["codebase", "file", "code", "function", "class", "module", "how does", "where is"]
-        needs_context = any(kw in lower_input for kw in codebase_keywords)
+        # Detect if this is a codebase-specific question requiring file access
+        file_access_keywords = ["show me", "translate", "convert", "write into", "rewrite", "port to"]
+        needs_file_access = any(kw in lower_input for kw in file_access_keywords)
 
-        codebase_info = ""
-        if needs_context:
-            try:
-                codebase_context = await self._query_mcp("analyze_codebase", {})
-                codebase_info = f"\n\nCodebase Context:\n{codebase_context[:1000]}"
-            except Exception as e:
-                print(f"[Warning] Failed to get codebase context: {e}")
+        if needs_file_access:
+            # Use Planner with MCP for codebase queries
+            yield f"[ANALYST] Analyzing codebase with MCP tools...\n\n"
 
-        # Use Preprocessor for direct, concise answers (no tool calling, no hallucinations)
-        analyst_prompt = """You are a helpful technical assistant. Answer questions directly and clearly.
+            planner_prompt = """You are a codebase analyst with MCP tool access.
+
+AVAILABLE MCP TOOLS:
+- read_file(path) - Read actual files (use real paths like "orchestrator/api_server.py")
+- analyze_codebase() - Get codebase overview and file listings
 
 CRITICAL RULES:
-1. DO NOT make up file paths or try to read files
-2. DO NOT use tools or execute commands
-3. DO NOT repeat yourself in loops
-4. If you don't have enough information, say so and ask for clarification
-5. Provide direct, actionable guidance based on what you know
+1. Use analyze_codebase() first if you need to find files
+2. ONLY use real file paths from the codebase (orchestrator/, agents/, scripts/)
+3. DO NOT make up paths like "2096955/..." - use actual project paths
+4. After reading code, provide helpful analysis/guidance
 
-Format your response in clear markdown."""
+Your task: Use MCP tools to access the codebase and answer the question accurately."""
 
-        question = f"""Question: {user_input}{codebase_info}
+            question_with_tools = f"""User question: {user_input}
 
-Provide a direct, helpful answer. If you need more specific information to answer properly, ask the user for clarification instead of making assumptions."""
+Steps:
+1. If unsure of file paths, call analyze_codebase() to see available files
+2. Read the relevant files using read_file() with correct paths
+3. Provide a helpful, accurate answer based on the actual code
 
-        yield f"[ANALYST] Answering your question...\n\n"
+Do not hallucinate - use the actual MCP tools to read real files."""
 
-        response_text = ""
-        async for chunk in self.call_agent(AgentName.PREPROCESSOR, analyst_prompt, question, temperature=0.4, max_tokens=1500):
-            response_text += chunk
-            yield chunk
+            async for chunk in self.call_agent(AgentName.PLANNER, planner_prompt, question_with_tools, temperature=0.3, max_tokens=2048):
+                yield chunk
 
-        # Detect if response contains hallucinated tool calls or file paths
-        hallucination_indicators = ["read_file", "```bash", "2096955/", "<think>"]
-        if any(indicator in response_text for indicator in hallucination_indicators):
-            yield f"\n\n---\n\n**Note**: I apologize, but I started to hallucinate file paths or commands. "
-            yield f"Could you rephrase your question more specifically? For example:\n"
-            yield f"- \"What are the steps to translate Python async code to Rust?\"\n"
-            yield f"- \"Which Rust frameworks are equivalent to FastAPI?\"\n"
+        else:
+            # General question - use Preprocessor for fast answers
+            yield f"[ANALYST] Answering your question...\n\n"
+
+            analyst_prompt = """You are a helpful technical assistant. Answer questions directly and clearly.
+
+Provide concise, actionable guidance. If the question needs codebase access, suggest the user rephrase with "show me" or "translate" to trigger file reading."""
+
+            question = f"""Question: {user_input}
+
+Provide a direct, helpful answer based on general knowledge and best practices."""
+
+            async for chunk in self.call_agent(AgentName.PREPROCESSOR, analyst_prompt, question, temperature=0.4, max_tokens=1500):
+                yield chunk
 
         yield "\n"
 
