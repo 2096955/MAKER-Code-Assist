@@ -74,9 +74,15 @@ class ContextCompressor:
         self.custom_compact_instructions: Optional[str] = None
     
     def add_message(self, role: str, content: str):
-        """Add a message to conversation history"""
+        """
+        Add a message to conversation history.
+        Triggers proactive compression check (OpenCode pattern).
+        """
         msg = ConversationMessage(role=role, content=content)
         self.conversation_history.append(msg)
+        
+        # Note: Compression checks should be called explicitly after add_message()
+        # in the calling code (see compress_if_needed() calls after each add_message)
     
     def _estimate_tokens(self, text: str) -> int:
         """Rough token estimate (4 chars per token)"""
@@ -132,10 +138,15 @@ Be brief but retain critical technical details."""
         
         return summary if not summary.startswith("Error:") else chunk_text[:500]
     
-    async def compress_if_needed(self) -> bool:
+    async def compress_if_needed(self, force: bool = False) -> bool:
         """
         Compress older messages if context is getting too large.
         Auto-compacts proactively at 95% threshold (OpenCode pattern).
+        
+        This should be called:
+        - After every message addition (proactive monitoring)
+        - When explicitly requested (force=True)
+        
         Returns True if compression occurred.
         """
         total_tokens = sum(m.token_estimate for m in self.conversation_history)
@@ -144,8 +155,8 @@ Be brief but retain critical technical details."""
         # Auto-compact threshold: 95% (proactive compression before hitting limit)
         auto_compact_threshold = int(self.max_context_tokens * 0.95)
         
-        # Compress if we're at or above 95% threshold (proactive) OR exceeding max (reactive)
-        if total_tokens < auto_compact_threshold:
+        # Force compression if requested, or compress if we're at/above 95% threshold
+        if not force and total_tokens < auto_compact_threshold:
             return False
         
         recent, older = self._get_recent_messages()
@@ -186,7 +197,11 @@ Be brief but retain critical technical details."""
         return True
     
     async def get_context(self, include_system: bool = True) -> str:
-        """Get the full context string for sending to an agent"""
+        """
+        Get the full context string for sending to an agent.
+        Proactively compresses if approaching 95% threshold (OpenCode pattern).
+        """
+        # Proactive compression: Check and compress if needed before returning context
         await self.compress_if_needed()
         
         parts = []
@@ -325,6 +340,17 @@ class Orchestrator:
 
         # MAKER mode: "high" (with Reviewer, needs 128GB RAM) or "low" (Planner reflection, works on 40GB RAM)
         self.maker_mode = os.getenv("MAKER_MODE", "high").lower()
+        
+        # Tool permissions (Crush pattern) - Week 2 feature, optional
+        try:
+            from orchestrator.tool_permissions import ToolPermissions
+            self.tool_permissions = ToolPermissions(codebase_root=self.codebase_root)
+        except ImportError:
+            # Tool permissions not available, create dummy that allows all
+            class DummyPermissions:
+                def is_tool_allowed(self, tool): return True
+                def get_config_summary(self): return {"mode": "disabled"}
+            self.tool_permissions = DummyPermissions()
 
         # MCP server URL
         self.mcp_url = mcp_url or os.getenv("MCP_CODEBASE_URL", "http://localhost:9001")
@@ -633,7 +659,20 @@ class Orchestrator:
         return ""
     
     async def _query_mcp(self, tool: str, args: Dict[str, Any]) -> str:
-        """Query MCP server for codebase information"""
+        """
+        Query MCP server for codebase information with permission checking.
+        
+        Args:
+            tool: Tool name
+            args: Tool arguments
+            
+        Returns:
+            Tool result or error message
+        """
+        # Check tool permissions (Crush pattern)
+        if not self.tool_permissions.is_tool_allowed(tool):
+            return f" Tool '{tool}' is blocked by .maker.json configuration. Allowed tools: {self.tool_permissions.get_config_summary()}"
+        
         try:
             async with httpx.AsyncClient(timeout=self.mcp_timeout) as client:
                 response = await client.post(
@@ -643,6 +682,8 @@ class Orchestrator:
                 if response.status_code == 200:
                     result = response.json()
                     return result.get("result", "")
+                elif response.status_code == 403:
+                    return f" Tool '{tool}' is blocked by server configuration"
                 return f" MCP error: {response.status_code}"
         except Exception as e:
             return f" MCP query failed: {str(e)}"
@@ -1101,8 +1142,9 @@ Which files to read? JSON array only:"""
             all_code = ""
             for file_path in file_paths[:3]:
                 try:
-                    # Use chunked reading for large files (semantic-aware)
-                    code = await self._query_mcp("read_file", {"path": file_path, "chunked": True})
+                    # Use chunked reading for large files (semantic-aware, auto-enabled for large files)
+                    # chunked=None means auto-detect: chunk if file > 5000 chars
+                    code = await self._query_mcp("read_file", {"path": file_path, "chunked": None})
                     if code and not code.startswith(" MCP"):
                         # If chunked, show first chunk; otherwise show first 3000 chars
                         if "chunked into" in code:
@@ -1264,6 +1306,8 @@ OR
         
         compressor = self.get_context_compressor(task_id)
         compressor.add_message("user", user_input)
+        # Proactive compression check after adding user message
+        await compressor.compress_if_needed()
         
         preprocessed_json = await self.preprocess_input(task_id, user_input)
         preprocessed_data = json.loads(preprocessed_json)
@@ -1381,6 +1425,10 @@ Create an execution plan with tasks that preserves thematic flows. Use MCP tools
             
             compressor.add_message("assistant", f"Generated code:\n{code_output[:2000]}")
             
+            # Proactive compression check after adding message (OpenCode pattern)
+            # This ensures we compress before context gets too large
+            await compressor.compress_if_needed()
+            
             state.code = code_output
             state.status = "reviewing"
             state.context_stats = compressor.get_stats()
@@ -1413,6 +1461,8 @@ Run tests and validate code quality.
                     yield chunk
 
             compressor.add_message("reviewer", review_output[:1000])
+            # Proactive compression check after adding reviewer feedback
+            await compressor.compress_if_needed()
             
             try:
                 state.review_feedback = json.loads(review_output)
@@ -1427,6 +1477,52 @@ Run tests and validate code quality.
             
             # Check if approved
             if state.review_feedback.get("status") == "approved":
+                # Self-verification loop: Pre-flight checks before returning code (kilocode pattern)
+                yield "\n[VERIFICATION] Running pre-flight checks...\n"
+                from orchestrator.code_verifier import CodeVerifier
+                verifier = CodeVerifier(codebase_root=self.codebase_root)
+                
+                # Try to extract file path from task description or plan
+                file_path = None
+                if state.plan and "plan" in state.plan and len(state.plan["plan"]) > 0:
+                    task_desc = state.plan["plan"][0].get("description", "")
+                    # Try to extract file path from task description
+                    import re
+                    path_match = re.search(r'(\w+\.py)', task_desc)
+                    if path_match:
+                        file_path = path_match.group(1)
+                
+                verification_results = verifier.verify_code(
+                    code=code_output,
+                    file_path=file_path,
+                    run_tests=True
+                )
+                
+                if not verification_results['valid']:
+                    yield f"⚠️ Verification failed:\n"
+                    for error in verification_results['errors']:
+                        yield f"  ❌ {error}\n"
+                    yield "\n[CODER] Fixing syntax errors...\n"
+                    # Don't approve, continue to next iteration
+                    state.review_feedback = {
+                        "status": "failed",
+                        "feedback": f"Syntax errors detected: {verification_results['errors']}"
+                    }
+                    state.save_to_redis(self.redis)
+                    continue
+                
+                if verification_results['warnings']:
+                    yield f"⚠️ Verification warnings:\n"
+                    for warning in verification_results['warnings'][:3]:  # Show first 3
+                        yield f"  ⚠️ {warning[:100]}\n"
+                
+                if verification_results['tests_run']:
+                    if verification_results['tests_passed']:
+                        yield "✅ All tests passed!\n"
+                    else:
+                        yield f"⚠️ Tests failed (code may still work, but tests need fixing)\n"
+                
+                yield "✅ Code verification complete\n"
                 state.status = "complete"
                 state.save_to_redis(self.redis)
                 yield "\n Code approved!\n"

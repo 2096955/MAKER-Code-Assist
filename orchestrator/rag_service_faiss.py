@@ -176,13 +176,16 @@ class RAGServiceFAISS:
         More recent files get higher scores.
         """
         try:
-            # Get last modified time from git
+            # Get codebase root from environment (file_path is relative to codebase root)
+            codebase_root = os.getenv("CODEBASE_ROOT", os.getcwd())
+            
+            # Get last modified time from git (run from codebase root)
             result = subprocess.run(
                 ['git', 'log', '-1', '--format=%ct', '--', file_path],
                 capture_output=True,
                 text=True,
                 timeout=5,
-                cwd=os.path.dirname(file_path) if os.path.dirname(file_path) else '.'
+                cwd=codebase_root
             )
             if result.returncode == 0 and result.stdout.strip():
                 timestamp = int(result.stdout.strip())

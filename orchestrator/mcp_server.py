@@ -115,7 +115,7 @@ class CodebaseMCPServer:
                 })
             return chunks
     
-    def read_file(self, path: str, chunked: bool = False) -> str:
+    def read_file(self, path: str, chunked: Optional[bool] = None) -> str:
         """
         Safely read a file from codebase.
         
@@ -139,8 +139,12 @@ class CodebaseMCPServer:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
             
-            # If chunked mode and file is large, use intelligent chunking
-            if chunked and len(content) > MAX_FILE_SIZE_FOR_CHUNKING:
+            # Auto-enable chunking for large files (if chunked not explicitly False)
+            # Default: chunked=None means auto-detect based on file size
+            should_chunk = chunked if chunked is not None else (len(content) > MAX_FILE_SIZE_FOR_CHUNKING)
+            
+            # If chunking enabled and file is large, use intelligent chunking
+            if should_chunk and len(content) > MAX_FILE_SIZE_FOR_CHUNKING:
                 if file_path.suffix == '.py':
                     chunks = self._chunk_python_file(file_path, content)
                     # Format chunks for display
@@ -517,8 +521,20 @@ async def list_tools():
 
 @app.post("/api/mcp/tool")
 async def call_tool(request: ToolRequest):
-    """Execute an MCP tool"""
+    """Execute an MCP tool with permission checking"""
     try:
+        # Check tool permissions (Crush pattern) - Week 2 feature, optional
+        try:
+            from orchestrator.tool_permissions import ToolPermissions
+            permissions = ToolPermissions(codebase_root=str(mcp_server.root))
+            if not permissions.is_tool_allowed(request.tool):
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Tool '{request.tool}' is blocked by .maker.json configuration"
+                )
+        except ImportError:
+            # Tool permissions not available, skip check (backward compatible)
+            pass
         if request.tool == "read_file":
             if "path" not in request.args:
                 raise HTTPException(status_code=400, detail="Missing 'path' parameter")
@@ -594,13 +610,42 @@ def _get_rag_service():
             _rag_service_cache = False  # Mark as checked
     return _rag_service_cache if _rag_service_cache else None
 
-async def _call_rag_search(query: str, top_k: int = 5) -> str:
-    """RAG search tool - called by agents when needed"""
+async def _call_rag_search(query: str, top_k: int = 5, hybrid: bool = True) -> str:
+    """
+    RAG search tool - called by agents when needed.
+    Uses hybrid search (semantic + keyword) if available.
+    """
     rag = _get_rag_service()
     if not rag:
         return " RAG not available. Index codebase first: python3 scripts/index_codebase.py"
     
     try:
+        # Use hybrid search if enabled and MCP is available
+        if hybrid:
+            try:
+                from orchestrator.hybrid_search import HybridSearch
+                hybrid_search = HybridSearch(rag_service=rag, mcp_client=mcp_server)
+                results = hybrid_search.search(query, top_k=top_k)
+                
+                if not results:
+                    return f" No relevant documents found for: {query}"
+                
+                formatted = f"Found {len(results)} relevant documents (hybrid search):\n\n"
+                for i, result in enumerate(results, 1):
+                    file_path = result.get('file_path', 'unknown')
+                    final_score = result.get('final_score', 0.0)
+                    sources = result.get('sources', [])
+                    formatted += f"[{i}] {file_path}\n"
+                    formatted += f"   Score: {final_score:.3f} | Sources: {', '.join(sources)}"
+                    if 'line_number' in result.get('metadata', {}):
+                        formatted += f" | Line: {result['metadata']['line_number']}"
+                    formatted += f"\n   {result.get('text', '')[:400]}...\n\n"
+                return formatted
+            except Exception as e:
+                # Fall back to semantic-only if hybrid fails
+                print(f"Warning: Hybrid search failed, using semantic-only: {e}")
+        
+        # Fallback: Semantic-only search
         results = rag.search(query, top_k=top_k)
         if not results:
             return f" No relevant documents found for: {query}"
