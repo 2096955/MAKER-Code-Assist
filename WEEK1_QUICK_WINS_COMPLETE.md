@@ -524,6 +524,53 @@ COMPLETE: "Looks good. All 6 functions implemented correctly."
 
 **Impact**: Planner will now actually read files before planning conversions, ensuring Coder agents receive the source code they need to generate complete implementations.
 
+### Final Architectural Fix (Post-Restart Testing)
+
+**Problem Discovered**: After restarting orchestrators with updated planner-system.md, testing revealed the Planner agents **still** didn't execute `read_file()` because they're just LLMs generating text plans - they don't have tool-calling capability.
+
+**Root Cause**: The Planner agent is called via `orchestrator.call_agent()` which just sends a prompt to an LLM and receives text back. There's no mechanism for the LLM to execute tools mid-generation.
+
+**Architectural Limitation**: In the MAKER system, only the Orchestrator can execute MCP tools, not individual agents.
+
+**Solution Applied** ([orchestrator/ee_planner.py](orchestrator/ee_planner.py)):
+
+Instead of expecting the Planner to call tools, the **EE Planner** (orchestrator wrapper) now pre-reads files BEFORE calling the Planner LLM:
+
+1. **New method**: `_read_source_file_if_needed()`
+   - Detects file conversion patterns via regex (convert/translate/port X to Y)
+   - Extracts file path from task description
+   - Calls MCP `read_file()` via HTTP before planning
+   - Returns file contents to inject into Planner prompt
+
+2. **Updated flow**:
+   ```
+   Step 1: Query world model
+   Step 2: Read source file if conversion task  ← NEW
+   Step 3: Generate narrative-aware prompt (with file contents)
+   Step 4: Call Planner LLM
+   ```
+
+3. **Prompt injection**:
+   - If file content available, injects `SOURCE FILE TO CONVERT:` section
+   - Adds "CRITICAL: You MUST inventory ALL functions..." reminder
+   - Planner LLM now sees complete source code in prompt
+
+**Detection Patterns**:
+- `convert <file.ts> to rust`
+- `translate <file.py> to go`
+- `port <file.js> to typescript`
+- `<file.ts> - can you convert this to rust`
+
+**Expected Behavior Now**:
+1. User: "formatting.ts - can you convert this to rust"
+2. EE Planner detects file conversion task
+3. EE Planner reads formatting.ts via MCP (gets 6 functions)
+4. EE Planner injects file contents into Planner prompt
+5. Planner LLM sees all 6 functions and creates accurate subtasks
+6. Coder agents receive complete source code context
+7. MAKER voting selects candidate that implements ALL 6 functions
+8. Reviewer validates all 6 functions present
+
 ---
 
 ## Summary
