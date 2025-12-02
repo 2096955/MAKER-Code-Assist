@@ -6,7 +6,9 @@ FastAPI Server: REST API for workflow execution
 import os
 import json
 import time
-from typing import Optional
+import aiofiles
+from pathlib import Path
+from typing import Optional, AsyncGenerator
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,6 +41,7 @@ class WorkflowRequest(BaseModel):
     task_id: Optional[str] = None
     session_id: Optional[str] = None
     resume: bool = False
+    output_file: Optional[str] = None  # Path to save streamed output (e.g., "output.md")
 
 
 class CompactRequest(BaseModel):
@@ -58,6 +61,40 @@ class ChatCompletionRequest(BaseModel):
     stream: bool = False
     temperature: Optional[float] = 0.7
     max_tokens: Optional[int] = None
+    output_file: Optional[str] = None  # Path to save streamed output (e.g., "output.md")
+
+
+async def stream_with_file_backup(
+    generator: AsyncGenerator[str, None],
+    output_file: Optional[str] = None
+) -> AsyncGenerator[str, None]:
+    """
+    Stream chunks from generator and optionally save to file for crash recovery.
+
+    Args:
+        generator: Async generator yielding string chunks
+        output_file: Optional file path to save output (e.g., "output.md")
+
+    Yields:
+        String chunks from generator
+    """
+    if output_file:
+        # Ensure output directory exists
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Open file in append mode for crash recovery
+        async with aiofiles.open(output_path, 'a') as f:
+            async for chunk in generator:
+                # Write to file first (for crash recovery)
+                await f.write(chunk)
+                await f.flush()  # Ensure written to disk immediately
+                # Then yield for HTTP response
+                yield chunk
+    else:
+        # No file backup, just pass through
+        async for chunk in generator:
+            yield chunk
 
 
 @app.get("/health")
@@ -126,16 +163,17 @@ async def chat_completions(request: ChatCompletionRequest):
                 async for chunk in orchestrator.orchestrate_workflow(task_id, user_message):
                     # Format as OpenAI-compatible SSE
                     delta = {"role": "assistant", "content": chunk}
-                    yield f"data: {json.dumps({'id': task_id, 'object': 'chat.completion.chunk', 'created': int(time.time()), 'model': request.model, 'choices': [{'index': 0, 'delta': delta, 'finish_reason': None}]})}\n\n"
+                    sse_data = f"data: {json.dumps({'id': task_id, 'object': 'chat.completion.chunk', 'created': int(time.time()), 'model': request.model, 'choices': [{'index': 0, 'delta': delta, 'finish_reason': None}]})}\n\n"
+                    yield sse_data
                 # Final chunk
                 yield f"data: {json.dumps({'id': task_id, 'object': 'chat.completion.chunk', 'created': int(time.time()), 'model': request.model, 'choices': [{'index': 0, 'delta': {}, 'finish_reason': 'stop'}]})}\n\n"
                 yield "data: [DONE]\n\n"
             except Exception as e:
                 error_data = {'error': {'message': str(e), 'type': 'internal_error'}}
                 yield f"data: {json.dumps(error_data)}\n\n"
-        
+
         return StreamingResponse(
-            generate(),
+            stream_with_file_backup(generate(), request.output_file),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -194,9 +232,9 @@ async def execute_workflow(request: WorkflowRequest):
                 yield f"data: {json.dumps({'done': True})}\n\n"
             except Exception as e:
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
-        
+
         return StreamingResponse(
-            generate(),
+            stream_with_file_backup(generate(), request.output_file),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
