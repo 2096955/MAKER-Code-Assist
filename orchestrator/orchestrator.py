@@ -950,26 +950,68 @@ Be direct. Output working code in a markdown code block. No questions."""
         yield "\n"
     
     async def _answer_question(self, task_id: str, user_input: str) -> AsyncGenerator[str, None]:
-        """Handle questions/analysis - use Planner for reasoning, not coding"""
-        # Get codebase context from MCP
-        codebase_context = await self._query_mcp("analyze_codebase", {})
-        
-        analyst_prompt = """You are a helpful technical analyst. Answer questions directly and concisely.
-Use the codebase context provided to give accurate, specific answers.
-You have access to MCP tools (read_file, search_docs, find_references) and optionally RAG tools (rag_search, rag_query) if available.
-Use tools when you need more specific information.
-Format your response in clear markdown. No JSON output needed."""
-        
-        question = f"""Question: {user_input}
+        """
+        Handle questions intelligently without hallucinations.
 
-Codebase Context (from MCP):
-{codebase_context}
+        Uses Preprocessor for direct question answering (fast, no tool calling).
+        For codebase-specific questions, provides context from MCP.
+        """
+        # Check if question is vague and needs clarification
+        vague_patterns = ["check", "look at", "try again", "fix this", "help"]
+        lower_input = user_input.lower().strip()
 
-Provide a direct, helpful answer. Use MCP tools or RAG tools if you need more specific information."""
-        
-        yield f"[ANALYST] Analyzing your question...\n\n"
-        async for chunk in self.call_agent(AgentName.PLANNER, analyst_prompt, question, temperature=0.3, max_tokens=2048):
+        if len(user_input.split()) <= 5 and any(p in lower_input for p in vague_patterns):
+            yield f"[ANALYST] Your question seems unclear.\n\n"
+            yield f"Could you please clarify what you'd like me to help with? For example:\n\n"
+            yield f"- \"Explain how the orchestrator workflow works\"\n"
+            yield f"- \"What files handle authentication?\"\n"
+            yield f"- \"How do I add a new agent?\"\n"
+            yield f"- \"What would I need to translate this Python code to Rust?\"\n\n"
+            return
+
+        # Get codebase context for codebase-related questions
+        codebase_keywords = ["codebase", "file", "code", "function", "class", "module", "how does", "where is"]
+        needs_context = any(kw in lower_input for kw in codebase_keywords)
+
+        codebase_info = ""
+        if needs_context:
+            try:
+                codebase_context = await self._query_mcp("analyze_codebase", {})
+                codebase_info = f"\n\nCodebase Context:\n{codebase_context[:1000]}"
+            except Exception as e:
+                print(f"[Warning] Failed to get codebase context: {e}")
+
+        # Use Preprocessor for direct, concise answers (no tool calling, no hallucinations)
+        analyst_prompt = """You are a helpful technical assistant. Answer questions directly and clearly.
+
+CRITICAL RULES:
+1. DO NOT make up file paths or try to read files
+2. DO NOT use tools or execute commands
+3. DO NOT repeat yourself in loops
+4. If you don't have enough information, say so and ask for clarification
+5. Provide direct, actionable guidance based on what you know
+
+Format your response in clear markdown."""
+
+        question = f"""Question: {user_input}{codebase_info}
+
+Provide a direct, helpful answer. If you need more specific information to answer properly, ask the user for clarification instead of making assumptions."""
+
+        yield f"[ANALYST] Answering your question...\n\n"
+
+        response_text = ""
+        async for chunk in self.call_agent(AgentName.PREPROCESSOR, analyst_prompt, question, temperature=0.4, max_tokens=1500):
+            response_text += chunk
             yield chunk
+
+        # Detect if response contains hallucinated tool calls or file paths
+        hallucination_indicators = ["read_file", "```bash", "2096955/", "<think>"]
+        if any(indicator in response_text for indicator in hallucination_indicators):
+            yield f"\n\n---\n\n**Note**: I apologize, but I started to hallucinate file paths or commands. "
+            yield f"Could you rephrase your question more specifically? For example:\n"
+            yield f"- \"What are the steps to translate Python async code to Rust?\"\n"
+            yield f"- \"Which Rust frameworks are equivalent to FastAPI?\"\n"
+
         yield "\n"
 
     async def _planner_reflection(self, code_output: str, task_desc: str, plan: dict) -> str:
