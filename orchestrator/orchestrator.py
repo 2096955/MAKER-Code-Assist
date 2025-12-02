@@ -1571,15 +1571,22 @@ OR
                 path_match = re.search(r'["\']?([/\w\-\.]+\.(ts|js|py|rs|go|java))["\']?', preprocessed_text)
                 if path_match:
                     file_to_read = path_match.group(1)
-                    # Remove leading slash if absolute path (make relative)
-                    if file_to_read.startswith('/'):
-                        # Try to make it relative to codebase
-                        file_to_read = file_to_read.lstrip('/')
-                    yield f"[PLANNER] Detected file conversion task, reading source file: {file_to_read}\n"
-                    source_code = await self._query_mcp("read_file", {"path": file_to_read, "chunked": None})
-                    if source_code and not source_code.startswith(" File not found"):
-                        codebase_context = f"Source file to convert:\n{source_code[:5000]}\n\n{codebase_context}"
-                        yield f"[PLANNER] Read {len(source_code)} characters from source file\n"
+                    
+                    # Security: Validate file path before reading (same as CODER section)
+                    original_path = file_to_read  # Keep original for error messages
+                    if not self._is_safe_file_path(file_to_read):
+                        yield f"[PLANNER] ⚠️ Security: Blocked access to restricted path: {original_path}\n"
+                        yield f"[PLANNER] Only user home directory and codebase files are allowed.\n"
+                    else:
+                        # Remove leading slash if absolute path (make relative for MCP)
+                        if file_to_read.startswith('/'):
+                            # Try to make it relative to codebase
+                            file_to_read = file_to_read.lstrip('/')
+                        yield f"[PLANNER] Detected file conversion task, reading source file: {file_to_read}\n"
+                        source_code = await self._query_mcp("read_file", {"path": file_to_read, "chunked": None})
+                        if source_code and not source_code.startswith(" File not found"):
+                            codebase_context = f"Source file to convert:\n{source_code[:5000]}\n\n{codebase_context}"
+                            yield f"[PLANNER] Read {len(source_code)} characters from source file\n"
             
             plan_message = f"""Task: {preprocessed_text}
 

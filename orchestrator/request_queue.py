@@ -7,19 +7,11 @@ per model server at a time, preventing the mutex.cc lock blocking errors.
 """
 
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 from enum import Enum
 import logging
 
 logger = logging.getLogger(__name__)
-
-
-class AgentName(Enum):
-    PREPROCESSOR = "preprocessor"
-    PLANNER = "planner"
-    CODER = "coder"
-    REVIEWER = "reviewer"
-    VOTER = "voter"
 
 
 class RequestQueueManager:
@@ -28,6 +20,9 @@ class RequestQueueManager:
 
     Each model server gets its own semaphore with max_concurrent=1 (sequential processing).
     This prevents the mutex.cc RAW lock blocking errors from llama.cpp.
+    
+    Note: Uses string values as dictionary keys to avoid enum type conflicts.
+    Works with any AgentName enum that has .value attribute.
     """
 
     def __init__(self, max_concurrent_per_model: int = 1):
@@ -40,22 +35,24 @@ class RequestQueueManager:
         self.max_concurrent_per_model = max_concurrent_per_model
 
         # Semaphores for each model server (prevents concurrent access)
-        self.semaphores: Dict[AgentName, asyncio.Semaphore] = {
-            agent: asyncio.Semaphore(max_concurrent_per_model)
-            for agent in AgentName
+        # Use string values as keys to work with any AgentName enum
+        agent_names = ["preprocessor", "planner", "coder", "reviewer", "voter"]
+        self.semaphores: Dict[str, asyncio.Semaphore] = {
+            agent_name: asyncio.Semaphore(max_concurrent_per_model)
+            for agent_name in agent_names
         }
 
         # Request counters for observability
-        self.request_counts: Dict[AgentName, int] = {
-            agent: 0 for agent in AgentName
+        self.request_counts: Dict[str, int] = {
+            agent_name: 0 for agent_name in agent_names
         }
-        self.active_requests: Dict[AgentName, int] = {
-            agent: 0 for agent in AgentName
+        self.active_requests: Dict[str, int] = {
+            agent_name: 0 for agent_name in agent_names
         }
 
     async def enqueue_request(
         self,
-        agent_name: AgentName,
+        agent_name: Union[Enum, str],
         request_func,
         *args,
         **kwargs
@@ -64,25 +61,27 @@ class RequestQueueManager:
         Enqueue a request to a model server, ensuring sequential processing.
 
         Args:
-            agent_name: Which agent/model to use
+            agent_name: Which agent/model to use (AgentName enum or string)
             request_func: Async function to call (e.g., call_llm)
             *args, **kwargs: Arguments to pass to request_func
 
         Returns:
             Result from request_func
         """
-        semaphore = self.semaphores[agent_name]
+        # Extract string value from enum if needed
+        agent_key = agent_name.value if hasattr(agent_name, 'value') else str(agent_name)
+        semaphore = self.semaphores[agent_key]
 
         # Wait for semaphore (blocks if another request is in flight)
         async with semaphore:
-            self.active_requests[agent_name] += 1
-            self.request_counts[agent_name] += 1
+            self.active_requests[agent_key] += 1
+            self.request_counts[agent_key] += 1
 
             try:
                 logger.debug(
-                    f"[RequestQueue] {agent_name.value}: "
-                    f"Processing request #{self.request_counts[agent_name]} "
-                    f"(active: {self.active_requests[agent_name]})"
+                    f"[RequestQueue] {agent_key}: "
+                    f"Processing request #{self.request_counts[agent_key]} "
+                    f"(active: {self.active_requests[agent_key]})"
                 )
 
                 # Execute the actual request
@@ -91,7 +90,7 @@ class RequestQueueManager:
                 return result
 
             finally:
-                self.active_requests[agent_name] -= 1
+                self.active_requests[agent_key] -= 1
 
     def get_stats(self) -> Dict[str, Any]:
         """Get queue statistics for observability"""
@@ -109,6 +108,6 @@ class RequestQueueManager:
 
     def reset_stats(self):
         """Reset request counters (useful for testing)"""
-        for agent in AgentName:
-            self.request_counts[agent] = 0
-            self.active_requests[agent] = 0
+        for agent_name in self.request_counts:
+            self.request_counts[agent_name] = 0
+            self.active_requests[agent_name] = 0
