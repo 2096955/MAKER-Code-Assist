@@ -779,12 +779,13 @@ class Orchestrator:
         """Non-streaming call to agent, returns full response (with request queueing)"""
 
         # Use semaphore to prevent mutex contention
-        semaphore = self.request_queue.semaphores[agent]
-
+        # Use agent.value to get string key (works with any AgentName enum)
+        semaphore = self.request_queue.semaphores[agent.value]
+        
         async with semaphore:
-            # Track active requests
-            self.request_queue.active_requests[agent] += 1
-            self.request_queue.request_counts[agent] += 1
+            # Track active requests (use string value as key)
+            self.request_queue.active_requests[agent.value] += 1
+            self.request_queue.request_counts[agent.value] += 1
 
             try:
                 async with httpx.AsyncClient(timeout=self.agent_timeout) as client:
@@ -807,7 +808,7 @@ class Orchestrator:
                     except Exception as e:
                         return f"Error: {str(e)}"
             finally:
-                self.request_queue.active_requests[agent] -= 1
+                self.request_queue.active_requests[agent.value] -= 1
     
     def _is_safe_file_path(self, file_path: str) -> bool:
         """
