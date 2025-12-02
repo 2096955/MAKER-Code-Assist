@@ -974,33 +974,43 @@ Be direct. Output working code in a markdown code block. No questions."""
         needs_file_access = any(kw in lower_input for kw in file_access_keywords)
 
         if needs_file_access:
-            # Use Planner with MCP for codebase queries
-            yield f"[ANALYST] Analyzing codebase with MCP tools...\n\n"
+            # Actually read key codebase files via MCP and show them to the user
+            yield f"[ANALYST] Reading codebase files via MCP...\n\n"
 
-            planner_prompt = """You are a codebase analyst with MCP tool access.
+            # Get codebase overview
+            try:
+                codebase_overview = await self._query_mcp("analyze_codebase", {})
+                if not codebase_overview.startswith(" MCP"):
+                    yield f"**Codebase Structure:**\n```\n{codebase_overview[:500]}\n```\n\n"
+            except Exception as e:
+                yield f"Warning: Could not read codebase overview: {e}\n\n"
 
-AVAILABLE MCP TOOLS:
-- read_file(path) - Read actual files (use real paths like "orchestrator/api_server.py")
-- analyze_codebase() - Get codebase overview and file listings
+            # Read key orchestrator file
+            try:
+                orchestrator_code = await self._query_mcp("read_file", {"path": "orchestrator/orchestrator.py"})
+                if orchestrator_code and not orchestrator_code.startswith(" MCP"):
+                    yield f"**Reading orchestrator/orchestrator.py** (first 100 lines):\n```python\n{orchestrator_code[:5000]}\n```\n\n"
+                else:
+                    yield f"Note: Could not read orchestrator.py - {orchestrator_code}\n\n"
+            except Exception as e:
+                yield f"Warning: Could not read orchestrator.py: {e}\n\n"
 
-CRITICAL RULES:
-1. Use analyze_codebase() first if you need to find files
-2. ONLY use real file paths from the codebase (orchestrator/, agents/, scripts/)
-3. DO NOT make up paths like "2096955/..." - use actual project paths
-4. After reading code, provide helpful analysis/guidance
+            # Now use Preprocessor to provide analysis based on the code we just showed
+            analyst_prompt = """You are a helpful technical assistant. The user has been shown actual code from their codebase above.
 
-Your task: Use MCP tools to access the codebase and answer the question accurately."""
+Provide specific, actionable guidance based on the actual code shown. Focus on:
+1. Key frameworks/libraries needed for the target language
+2. Specific translation challenges
+3. Architectural patterns to preserve
+4. Step-by-step migration approach
 
-            question_with_tools = f"""User question: {user_input}
+Be direct and specific based on the code shown."""
 
-Steps:
-1. If unsure of file paths, call analyze_codebase() to see available files
-2. Read the relevant files using read_file() with correct paths
-3. Provide a helpful, accurate answer based on the actual code
+            question_with_context = f"""User question: {user_input}
 
-Do not hallucinate - use the actual MCP tools to read real files."""
+The actual codebase structure and code has been shown above. Provide specific, practical guidance."""
 
-            async for chunk in self.call_agent(AgentName.PLANNER, planner_prompt, question_with_tools, temperature=0.3, max_tokens=2048):
+            async for chunk in self.call_agent(AgentName.PREPROCESSOR, analyst_prompt, question_with_context, temperature=0.4, max_tokens=2000):
                 yield chunk
 
         else:
