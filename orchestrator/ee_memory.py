@@ -18,6 +18,10 @@ from enum import Enum
 from pathlib import Path
 import ast
 import re
+from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor
+import threading
+from collections import OrderedDict
 
 
 class MemoryLevel(Enum):
@@ -131,16 +135,27 @@ class HierarchicalMemoryNetwork:
             "l3_count": 0,
             "total_compression_ratio": 0.0
         }
+        
+        # LRU cache for file access tracking
+        self._lru_cache: OrderedDict[str, float] = OrderedDict()
+    
+    def _update_lru_cache(self, node_id: str):
+        """Update LRU cache for node access tracking"""
+        self._lru_cache[node_id] = time.time()
+        # Evict oldest if cache too large (keep last 1000)
+        if len(self._lru_cache) > 1000:
+            self._lru_cache.popitem(last=False)
     
     def add_code_file(self, file_path: str, content: str) -> str:
-        """Add raw code file to L₀"""
+        """Add raw code file to L₀ with LRU caching"""
         node_id = f"l0_{hashlib.md5(file_path.encode()).hexdigest()[:12]}"
-        
+
         # Check if already exists
         if node_id in self.l0_nodes:
             self.l0_nodes[node_id].access_count += 1
+            self._update_lru_cache(node_id)
             return node_id
-        
+
         node = MemoryNode(
             level=MemoryLevel.L0_RAW,
             content=content,
@@ -149,6 +164,7 @@ class HierarchicalMemoryNetwork:
         )
         self.l0_nodes[node_id] = node
         self.file_to_l0[file_path] = node_id
+        self._update_lru_cache(node_id)
         self.stats["l0_count"] += 1
         return node_id
     
