@@ -86,8 +86,16 @@ def divide(a, b):
 - **NEVER ask for file content** - If it's not provided, generate code based on the task description
 - No clarifying questions for simple tasks
 
-## Important Notes
+## Important Notes for File Conversion Tasks
 
-- **When source code is provided in the task context** (marked with "=== SOURCE FILE TO CONVERT ==="), you MUST use it
-- **You do NOT need to read files yourself** - The orchestrator provides source code when needed
-- **Just convert the provided source code** - Don't refuse, don't apologize, just convert it
+**If source code is provided in task context** (marked with "=== SOURCE FILE TO CONVERT ==="):
+- Use the provided source code directly
+- Don't call `read_file()` again, you already have it
+- Convert ALL functions/classes/interfaces from the provided source
+
+**If file path mentioned but NO source code provided**:
+- Call `read_file(path)` yourself to get the source code
+- Then convert ALL functions/classes/interfaces from what you read
+- **NEVER refuse** with "I don't have access" - you DO have `read_file()` tool
+
+**Critical**: Whether source is provided or you read it yourself, you MUST implement EVERYTHING from the source file. No partial implementations, no TODOs, no placeholders.
