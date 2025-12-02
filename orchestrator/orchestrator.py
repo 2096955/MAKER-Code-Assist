@@ -1117,9 +1117,9 @@ Vote for the BEST candidate that preserves narrative coherence. Reply with only:
         semaphore = self.request_queue.semaphores[agent.value]
 
         async with semaphore:
-            # Track active requests
-            self.request_queue.active_requests[agent] += 1
-            self.request_queue.request_counts[agent] += 1
+            # Track active requests (use string value as key)
+            self.request_queue.active_requests[agent.value] += 1
+            self.request_queue.request_counts[agent.value] += 1
 
             try:
                 # Execute HTTP request while holding semaphore
@@ -1128,7 +1128,7 @@ Vote for the BEST candidate that preserves narrative coherence. Reply with only:
                 ):
                     yield chunk
             finally:
-                self.request_queue.active_requests[agent] -= 1
+                self.request_queue.active_requests[agent.value] -= 1
     
     def _log_skill_usage(self, skill_name: str):
         """
