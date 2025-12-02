@@ -133,11 +133,19 @@ Be brief but retain critical technical details."""
         return summary if not summary.startswith("Error:") else chunk_text[:500]
     
     async def compress_if_needed(self) -> bool:
-        """Compress older messages if context is getting too large. Returns True if compression occurred."""
+        """
+        Compress older messages if context is getting too large.
+        Auto-compacts proactively at 95% threshold (OpenCode pattern).
+        Returns True if compression occurred.
+        """
         total_tokens = sum(m.token_estimate for m in self.conversation_history)
         total_tokens += self.compressed_token_count
         
-        if total_tokens <= self.max_context_tokens:
+        # Auto-compact threshold: 95% (proactive compression before hitting limit)
+        auto_compact_threshold = int(self.max_context_tokens * 0.95)
+        
+        # Compress if we're at or above 95% threshold (proactive) OR exceeding max (reactive)
+        if total_tokens < auto_compact_threshold:
             return False
         
         recent, older = self._get_recent_messages()
@@ -311,6 +319,9 @@ class Orchestrator:
         
         self.num_candidates = int(os.getenv("MAKER_NUM_CANDIDATES", "5"))
         self.vote_k = int(os.getenv("MAKER_VOTE_K", "3"))
+        
+        # Tool call scaling: Dynamic candidate count based on task complexity (Claude Code pattern)
+        self.enable_tool_scaling = os.getenv("ENABLE_TOOL_SCALING", "true").lower() == "true"
 
         # MAKER mode: "high" (with Reviewer, needs 128GB RAM) or "low" (Planner reflection, works on 40GB RAM)
         self.maker_mode = os.getenv("MAKER_MODE", "high").lower()
@@ -683,6 +694,27 @@ class Orchestrator:
             except Exception as e:
                 return f"Error: {str(e)}"
     
+    def _get_candidate_count(self, task_complexity: str) -> int:
+        """
+        Scale number of tool calls (candidates) to query complexity (Claude Code pattern).
+        
+        Args:
+            task_complexity: 'simple_code', 'question', or 'complex_code'
+            
+        Returns:
+            Number of candidates to generate (2 for simple, 5 for medium, 8 for complex)
+        """
+        if not self.enable_tool_scaling:
+            return self.num_candidates  # Use fixed default
+        
+        scaling_map = {
+            "simple_code": 2,   # Simple tasks: fewer candidates (save compute)
+            "question": 2,      # Questions: fewer candidates
+            "complex_code": 8   # Complex tasks: more candidates (better quality)
+        }
+        
+        return scaling_map.get(task_complexity, 5)  # Default to 5 for unknown
+    
     async def generate_candidates(self, task_desc: str, context: str, n: int = 5, 
                                     task_id: Optional[str] = None) -> list:
         """Generate N candidate solutions in parallel (MAKER decomposition)"""
@@ -992,55 +1024,100 @@ Be direct. Output working code in a markdown code block. No questions."""
                 yield f"Note: Could not get overview: {e}\n\n"
 
             # Step 2: Intelligently determine which files to read based on the question
-            file_finder_prompt = """Based on the user's question and codebase structure, identify 2-3 most relevant files.
+            # Try RAG first (if available) for semantic file discovery, then fall back to Preprocessor
+            import re
+            file_paths = []
+            
+            # Try RAG search first (best for semantic understanding)
+            try:
+                yield f"**Finding relevant files via RAG...**\n"
+                rag_result = await self._query_mcp("rag_search", {"query": user_input, "top_k": 5})
+                if rag_result and not rag_result.startswith(" RAG not available") and not rag_result.startswith(" No relevant"):
+                    # Extract file paths from RAG results (format: "[1] orchestrator/api_server.py (relevance: 0.892)")
+                    rag_paths = re.findall(r'\[(\d+)\]\s+([a-zA-Z0-9_/\-\.]+)', rag_result)
+                    if rag_paths:
+                        # Extract unique file paths (RAG may return same file multiple times)
+                        seen = set()
+                        for _, path in rag_paths:
+                            if path not in seen:
+                                file_paths.append(path)
+                                seen.add(path)
+                                if len(file_paths) >= 3:
+                                    break
+                        if file_paths:
+                            yield f"✓ Found {len(file_paths)} relevant files via RAG\n\n"
+            except Exception:
+                # RAG failed, will try Preprocessor fallback
+                pass
+            
+            # Fallback: Use Preprocessor to analyze question + codebase structure
+            if not file_paths:
+                yield f"**Finding relevant files via codebase analysis...**\n"
+                file_finder_prompt = """Based on the user's question and codebase structure, identify 2-3 most relevant files.
 
 Output ONLY a JSON array of file paths. Example: ["orchestrator/api_server.py", "orchestrator/mcp_server.py"]
 
 If unsure, include the main/central files."""
 
-            file_finder_question = f"""Question: {user_input}
+                file_finder_question = f"""Question: {user_input}
 
 Codebase:
 {codebase_overview[:1000]}
 
 Which files to read? JSON array only:"""
 
-            yield f"**Finding relevant files...**\n"
+                try:
+                    file_list_response = await self.call_agent_sync(
+                        AgentName.PREPROCESSOR,
+                        file_finder_prompt,
+                        file_finder_question,
+                        temperature=0.2
+                    )
 
-            file_list_response = await self.call_agent_sync(
-                AgentName.PREPROCESSOR,
-                file_finder_prompt,
-                file_finder_question,
-                temperature=0.2
-            )
+                    # Parse file paths
+                    try:
+                        json_match = re.search(r'\[.*?\]', file_list_response, re.DOTALL)
+                        if json_match:
+                            file_paths = json.loads(json_match.group())
+                        else:
+                            # Fallback: match any file path (not just .py)
+                            file_paths = re.findall(r'["\']([a-zA-Z0-9_/\-\.]+\.(?:py|js|ts|tsx|jsx|md|json|yaml|yml|txt))["\']', file_list_response)
+                            # Also try without quotes
+                            if not file_paths:
+                                file_paths = re.findall(r'([a-zA-Z0-9_/\-\.]+\.(?:py|js|ts|tsx|jsx|md|json|yaml|yml|txt))', file_list_response)
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
 
-            # Parse file paths
-            import re
-            file_paths = []
-            try:
-                json_match = re.search(r'\[.*?\]', file_list_response, re.DOTALL)
-                if json_match:
-                    file_paths = json.loads(json_match.group())
-                else:
-                    file_paths = re.findall(r'["\']([a-zA-Z0-9_/\-\.]+\.py)["\']', file_list_response)
-
-                if not file_paths:
-                    file_paths = ["orchestrator/orchestrator.py"]
-
-                yield f"Reading: {', '.join(file_paths[:3])}\n\n"
-            except Exception:
+            # Final fallback: use orchestrator.py
+            if not file_paths:
                 file_paths = ["orchestrator/orchestrator.py"]
-                yield f"Using default: orchestrator/orchestrator.py\n\n"
+                yield f"⚠️ Using default: orchestrator/orchestrator.py (RAG and analysis unavailable)\n\n"
+            else:
+                yield f"Reading: {', '.join(file_paths[:3])}\n\n"
 
-            # Step 3: Read the files
+            # Step 3: Read the files (with intelligent chunking for large files)
             all_code = ""
             for file_path in file_paths[:3]:
                 try:
-                    code = await self._query_mcp("read_file", {"path": file_path})
+                    # Use chunked reading for large files (semantic-aware)
+                    code = await self._query_mcp("read_file", {"path": file_path, "chunked": True})
                     if code and not code.startswith(" MCP"):
-                        snippet = code[:3000]
-                        yield f"**{file_path}:**\n```python\n{snippet}\n...\n```\n\n"
-                        all_code += f"\n\n=== {file_path} ===\n{code[:3000]}\n"
+                        # If chunked, show first chunk; otherwise show first 3000 chars
+                        if "chunked into" in code:
+                            # Extract first chunk for preview
+                            first_chunk_match = re.search(r'---\s+\w+:\s+\w+.*?---\n(.*?)(?=\n---|\n\n|$)', code, re.DOTALL)
+                            if first_chunk_match:
+                                snippet = first_chunk_match.group(1)[:2000]
+                                yield f"**{file_path}** (semantically chunked):\n```python\n{snippet}\n...\n```\n\n"
+                            else:
+                                snippet = code[:2000]
+                                yield f"**{file_path}:**\n```\n{snippet}\n...\n```\n\n"
+                        else:
+                            snippet = code[:3000]
+                            yield f"**{file_path}:**\n```python\n{snippet}\n...\n```\n\n"
+                        all_code += f"\n\n=== {file_path} ===\n{code[:5000]}\n"  # Keep more context for analysis
                 except Exception as e:
                     yield f"Note: Could not read {file_path}: {e}\n"
 
@@ -1279,8 +1356,14 @@ Create an execution plan with tasks that preserves thematic flows. Use MCP tools
             else:
                 task_desc = preprocessed_text
             
-            yield f"\n[MAKER] Generating {self.num_candidates} candidates in parallel...\n"
-            candidates = await self.generate_candidates(task_desc, preprocessed_text, self.num_candidates, task_id)
+            # Scale candidates based on task complexity (Claude Code pattern)
+            request_type = await self._classify_request(user_input)
+            num_candidates = self._get_candidate_count(request_type)
+            if num_candidates != self.num_candidates:
+                yield f"\n[MAKER] Task complexity: {request_type} → Generating {num_candidates} candidates (scaled from default {self.num_candidates})...\n"
+            else:
+                yield f"\n[MAKER] Generating {num_candidates} candidates in parallel...\n"
+            candidates = await self.generate_candidates(task_desc, preprocessed_text, num_candidates, task_id)
             
             if len(candidates) == 0:
                 yield " No valid candidates generated\n"

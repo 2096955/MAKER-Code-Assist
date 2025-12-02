@@ -19,8 +19,10 @@ LIMITATIONS:
 
 import os
 import pickle
+import subprocess
 from typing import List, Dict, Optional
 from pathlib import Path
+from datetime import datetime
 import numpy as np
 import faiss
 from sentence_transformers import SentenceTransformer
@@ -168,16 +170,89 @@ class RAGServiceFAISS:
             }
         }])
     
+    def _get_file_recency_score(self, file_path: str) -> float:
+        """
+        Get file recency score based on git timestamp (0.0 to 1.0).
+        More recent files get higher scores.
+        """
+        try:
+            # Get last modified time from git
+            result = subprocess.run(
+                ['git', 'log', '-1', '--format=%ct', '--', file_path],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                cwd=os.path.dirname(file_path) if os.path.dirname(file_path) else '.'
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                timestamp = int(result.stdout.strip())
+                # Score based on age: files modified in last 30 days = 1.0, older = lower
+                age_days = (datetime.now().timestamp() - timestamp) / 86400
+                if age_days <= 30:
+                    return 1.0
+                elif age_days <= 90:
+                    return 0.8
+                elif age_days <= 180:
+                    return 0.6
+                else:
+                    return 0.4
+        except Exception:
+            pass
+        
+        # Fallback: use file system modification time
+        try:
+            if os.path.exists(file_path):
+                mtime = os.path.getmtime(file_path)
+                age_days = (datetime.now().timestamp() - mtime) / 86400
+                if age_days <= 30:
+                    return 0.9
+                elif age_days <= 90:
+                    return 0.7
+                else:
+                    return 0.5
+        except Exception:
+            pass
+        
+        return 0.5  # Default neutral score
+    
+    def _get_file_importance_score(self, file_path: str) -> float:
+        """
+        Get file importance score based on naming patterns (0.0 to 1.0).
+        Main files, core modules get higher scores than tests, examples.
+        """
+        path_lower = file_path.lower()
+        
+        # High importance patterns
+        if any(pattern in path_lower for pattern in ['main.py', 'app.py', 'index.py', 'core/', 'src/', 'lib/']):
+            return 1.0
+        
+        # Medium importance
+        if any(pattern in path_lower for pattern in ['utils/', 'helpers/', 'common/', 'base']):
+            return 0.8
+        
+        # Lower importance
+        if any(pattern in path_lower for pattern in ['test_', 'tests/', 'example', 'demo', 'sample']):
+            return 0.4
+        
+        # Default
+        return 0.7
+    
     def search(self, query: str, top_k: int = 5) -> List[Dict]:
         """
-        Search for similar documents
+        Search for similar documents with enhanced confidence scoring.
+        
+        Confidence score combines:
+        - Semantic similarity (0.5 weight)
+        - File recency (0.2 weight)
+        - File importance (0.2 weight)
+        - Result ranking boost (0.1 weight)
         
         Args:
             query: Search query
             top_k: Number of results to return
             
         Returns:
-            List of relevant documents with scores
+            List of relevant documents with enhanced confidence scores
         """
         if self.index.ntotal == 0:
             return []
@@ -188,25 +263,55 @@ class RAGServiceFAISS:
         # Normalize for cosine similarity
         faiss.normalize_L2(query_embedding)
         
-        # Search FAISS index
-        distances, indices = self.index.search(query_embedding.astype('float32'), top_k)
+        # Search FAISS index (get more results for re-ranking)
+        search_k = min(top_k * 2, self.index.ntotal)
+        distances, indices = self.index.search(query_embedding.astype('float32'), search_k)
         
-        # Format results (convert L2 distance to similarity score)
+        # Format results with enhanced confidence scoring
         results = []
-        for i, (distance, idx) in enumerate(zip(distances[0], indices[0])):
+        for rank, (distance, idx) in enumerate(zip(distances[0], indices[0])):
             if idx < len(self.documents):
-                # Convert L2 distance to similarity (1 / (1 + distance))
-                # For normalized vectors, distance range is [0, 2], similarity is [0.33, 1.0]
+                doc = self.documents[idx]
+                metadata = doc.get('metadata', {})
+                file_path = metadata.get('file_path', '')
+                
+                # Base similarity score (0.0 to 1.0)
                 similarity = 1.0 / (1.0 + distance)
+                
+                # File recency score (0.0 to 1.0)
+                recency_score = self._get_file_recency_score(file_path) if file_path else 0.5
+                
+                # File importance score (0.0 to 1.0)
+                importance_score = self._get_file_importance_score(file_path) if file_path else 0.7
+                
+                # Ranking boost (higher rank = higher score)
+                rank_boost = 1.0 - (rank / search_k) * 0.2  # Top result gets 1.0, last gets 0.8
+                
+                # Combined confidence score (weighted average)
+                confidence = (
+                    similarity * 0.5 +      # Semantic similarity (primary)
+                    recency_score * 0.2 +   # File recency
+                    importance_score * 0.2 + # File importance
+                    rank_boost * 0.1         # Ranking boost
+                )
+                
                 results.append({
                     'id': int(idx),
-                    'text': self.documents[idx]['text'],
-                    'score': float(similarity),
+                    'text': doc['text'],
+                    'score': float(similarity),  # Keep original similarity for backward compatibility
+                    'confidence': float(confidence),  # New enhanced confidence score
                     'distance': float(distance),
-                    'metadata': self.documents[idx].get('metadata', {})
+                    'metadata': {
+                        **metadata,
+                        'recency_score': float(recency_score),
+                        'importance_score': float(importance_score),
+                        'rank': rank + 1
+                    }
                 })
         
-        return results
+        # Sort by confidence (highest first) and return top_k
+        results.sort(key=lambda x: x['confidence'], reverse=True)
+        return results[:top_k]
     
     async def query(self, question: str, top_k: int = 5) -> str:
         """

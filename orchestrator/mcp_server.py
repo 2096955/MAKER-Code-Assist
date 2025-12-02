@@ -25,6 +25,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+# Maximum file size before chunking (in characters)
+MAX_FILE_SIZE_FOR_CHUNKING = 5000
+
 app = FastAPI(title="MCP Codebase Server", version="1.0.0")
 
 class CodebaseMCPServer:
@@ -38,8 +41,91 @@ class CodebaseMCPServer:
             'weaviate_data', 'redis_data', 'postgres_data'
         }
         
-    def read_file(self, path: str) -> str:
-        """Safely read a file from codebase"""
+    def _chunk_python_file(self, file_path: Path, content: str) -> List[Dict[str, Any]]:
+        """
+        Chunk Python file respecting function/class boundaries (semantic-aware chunking).
+        
+        Returns:
+            List of chunks with metadata: [{text, start_line, end_line, chunk_type, name}]
+        """
+        chunks = []
+        lines = content.splitlines()
+        
+        try:
+            tree = ast.parse(content, filename=str(file_path))
+            
+            class ChunkVisitor(ast.NodeVisitor):
+                def __init__(self, lines_list):
+                    self.lines = lines_list
+                    self.chunks = []
+                
+                def visit_FunctionDef(self, node):
+                    start_line = node.lineno - 1  # 0-indexed
+                    end_line = node.end_lineno if hasattr(node, 'end_lineno') else node.lineno
+                    chunk_text = '\n'.join(self.lines[start_line:end_line])
+                    self.chunks.append({
+                        'text': chunk_text,
+                        'start_line': start_line + 1,  # 1-indexed for display
+                        'end_line': end_line,
+                        'chunk_type': 'function',
+                        'name': node.name
+                    })
+                    self.generic_visit(node)
+                
+                def visit_ClassDef(self, node):
+                    start_line = node.lineno - 1
+                    end_line = node.end_lineno if hasattr(node, 'end_lineno') else node.lineno
+                    chunk_text = '\n'.join(self.lines[start_line:end_line])
+                    self.chunks.append({
+                        'text': chunk_text,
+                        'start_line': start_line + 1,
+                        'end_line': end_line,
+                        'chunk_type': 'class',
+                        'name': node.name
+                    })
+                    self.generic_visit(node)
+            
+            visitor = ChunkVisitor(lines)
+            visitor.visit(tree)
+            
+            # If no functions/classes found, create module-level chunk
+            if not visitor.chunks:
+                visitor.chunks.append({
+                    'text': content[:MAX_FILE_SIZE_FOR_CHUNKING],
+                    'start_line': 1,
+                    'end_line': len(lines),
+                    'chunk_type': 'module',
+                    'name': 'module'
+                })
+            
+            return visitor.chunks
+            
+        except SyntaxError:
+            # If AST parsing fails, fall back to line-based chunking
+            chunk_size = 100  # lines per chunk
+            chunks = []
+            for i in range(0, len(lines), chunk_size):
+                chunk_lines = lines[i:i+chunk_size]
+                chunks.append({
+                    'text': '\n'.join(chunk_lines),
+                    'start_line': i + 1,
+                    'end_line': min(i + chunk_size, len(lines)),
+                    'chunk_type': 'block',
+                    'name': f'block_{i//chunk_size + 1}'
+                })
+            return chunks
+    
+    def read_file(self, path: str, chunked: bool = False) -> str:
+        """
+        Safely read a file from codebase.
+        
+        Args:
+            path: File path relative to codebase root
+            chunked: If True and file is large, return semantic chunks instead of full file
+        
+        Returns:
+            File content (or chunked representation if chunked=True and file is large)
+        """
         file_path = (self.root / path).resolve()
         
         # Security: Ensure path is within codebase
@@ -51,7 +137,23 @@ class CodebaseMCPServer:
             
         try:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                return f.read()
+                content = f.read()
+            
+            # If chunked mode and file is large, use intelligent chunking
+            if chunked and len(content) > MAX_FILE_SIZE_FOR_CHUNKING:
+                if file_path.suffix == '.py':
+                    chunks = self._chunk_python_file(file_path, content)
+                    # Format chunks for display
+                    result = f"File {path} (chunked into {len(chunks)} semantic units):\n\n"
+                    for chunk in chunks:
+                        result += f"--- {chunk['chunk_type'].upper()}: {chunk['name']} (lines {chunk['start_line']}-{chunk['end_line']}) ---\n"
+                        result += f"{chunk['text']}\n\n"
+                    return result
+                else:
+                    # For non-Python files, truncate with note
+                    return f"{content[:MAX_FILE_SIZE_FOR_CHUNKING]}\n\n... (truncated, file too large: {len(content)} chars)"
+            
+            return content
         except Exception as e:
             return f" Error reading file: {e}"
     
@@ -505,8 +607,14 @@ async def _call_rag_search(query: str, top_k: int = 5) -> str:
         
         formatted = f"Found {len(results)} relevant documents:\n\n"
         for i, doc in enumerate(results, 1):
-            formatted += f"[{i}] {doc['metadata'].get('file_path', 'unknown')} (relevance: {doc['score']:.3f})\n"
-            formatted += f"{doc['text'][:400]}...\n\n"
+            file_path = doc['metadata'].get('file_path', 'unknown')
+            similarity = doc.get('score', 0.0)
+            confidence = doc.get('confidence', similarity)  # Use confidence if available, fallback to similarity
+            formatted += f"[{i}] {file_path}\n"
+            formatted += f"   Similarity: {similarity:.3f} | Confidence: {confidence:.3f}"
+            if 'recency_score' in doc.get('metadata', {}):
+                formatted += f" | Recency: {doc['metadata']['recency_score']:.2f} | Importance: {doc['metadata']['importance_score']:.2f}"
+            formatted += f"\n   {doc['text'][:400]}...\n\n"
         return formatted
     except Exception as e:
         return f" RAG search error: {str(e)}"
