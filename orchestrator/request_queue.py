@@ -96,12 +96,12 @@ class RequestQueueManager:
         """Get queue statistics for observability"""
         return {
             "total_requests": {
-                agent.value: count
-                for agent, count in self.request_counts.items()
+                agent_name: count
+                for agent_name, count in self.request_counts.items()
             },
             "active_requests": {
-                agent.value: count
-                for agent, count in self.active_requests.items()
+                agent_name: count
+                for agent_name, count in self.active_requests.items()
             },
             "max_concurrent_per_model": self.max_concurrent_per_model
         }
