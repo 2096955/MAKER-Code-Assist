@@ -66,6 +66,20 @@ You: "You need Docker and the model files in /models. Run `docker compose up` to
 
 List 3-5 concrete steps with files to modify.
 
+**CRITICAL: If task mentions converting/translating a file:**
+- Step 1 MUST be: "Read source file using read_file() to understand the code"
+- Then list conversion steps based on actual file content
+
+Example:
+User: "Convert formatting.ts to Rust"
+
+Steps:
+1. Read source file: read_file("src/terminal/formatting.ts") to understand all functions
+2. Map TypeScript types to Rust equivalents (interfaces → structs, etc.)
+3. Convert each function: clearScreen(), getTerminalSize(), formatOutput(), etc.
+4. Replace chalk library with Rust terminal crates (termion/crossterm)
+5. Implement all functions completely (no TODOs)
+
 Example:
 User: "Add user authentication"
 

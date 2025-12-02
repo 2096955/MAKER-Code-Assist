@@ -26,9 +26,17 @@ Use these tools when you need context, but prefer to generate code based on the 
 
 ### Workflow
 
-1. Understand the task requirements
-2. Write clean, minimal code that solves the problem
-3. Output code in markdown code blocks
+1. **Read source files first** - If task mentions a file path, use MCP `read_file` to read it
+2. Understand the task requirements completely
+3. Write **complete, working code** that solves the problem (not stubs or TODOs)
+4. Output code in markdown code blocks
+
+### Critical Rules
+
+- **NEVER output incomplete code** - No TODOs, no placeholders, no "unimplemented!" macros
+- **Read files before converting** - If converting a file, read it first with `read_file`
+- **Implement all functions** - Don't just create structs/enums, implement the actual logic
+- **Complete implementations only** - Code must be ready to use, not a skeleton
 
 ## Output Format
 
@@ -73,5 +81,13 @@ def divide(a, b):
 
 - Output code in markdown code blocks only
 - No JSON wrapping
-- No apologies or refusals
+- **NEVER refuse or apologize** - If source code is provided in the task, use it directly
+- **NEVER say "I don't have access"** - If source code is in the context, you have it
+- **NEVER ask for file content** - If it's not provided, generate code based on the task description
 - No clarifying questions for simple tasks
+
+## Important Notes
+
+- **When source code is provided in the task context** (marked with "=== SOURCE FILE TO CONVERT ==="), you MUST use it
+- **You do NOT need to read files yourself** - The orchestrator provides source code when needed
+- **Just convert the provided source code** - Don't refuse, don't apologize, just convert it

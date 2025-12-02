@@ -735,6 +735,97 @@ class Orchestrator:
             except Exception as e:
                 return f"Error: {str(e)}"
     
+    def _is_safe_file_path(self, file_path: str) -> bool:
+        """
+        Security check: Validate file path is safe to read.
+        
+        Blocks:
+        - System directories (/etc, /usr, /bin, /sbin, /var, /sys, /proc, /dev)
+        - Root directory files
+        - Hidden system files
+        
+        Allows:
+        - User home directory (~/ or /Users/username/)
+        - Codebase files (relative paths)
+        - Files in common development directories
+        
+        Args:
+            file_path: File path to validate
+            
+        Returns:
+            True if path is safe, False if blocked
+        """
+        if not file_path:
+            return False
+        
+        # Normalize path
+        normalized = os.path.normpath(file_path)
+        
+        # Block system directories (absolute paths only)
+        if normalized.startswith('/'):
+            # Blocked system paths
+            blocked_prefixes = [
+                '/etc',      # System configuration
+                '/usr',      # System programs
+                '/bin',      # System binaries
+                '/sbin',     # System admin binaries
+                '/var',      # Variable data
+                '/sys',      # System files
+                '/proc',     # Process files
+                '/dev',      # Device files
+                '/root',     # Root home
+                '/boot',     # Boot files
+                '/lib',      # Libraries
+                '/lib64',    # 64-bit libraries
+                '/opt',      # Optional software (usually system)
+                '/srv',      # Service data
+                '/tmp',      # Temporary (security risk)
+                '/run',      # Runtime data
+            ]
+            
+            for prefix in blocked_prefixes:
+                if normalized.startswith(prefix):
+                    return False
+            
+            # Allow user home directories
+            # Check if path is under a user home directory
+            home_dirs = [
+                os.path.expanduser('~'),  # Current user's home
+                '/Users',                  # macOS user homes
+                '/home',                   # Linux user homes
+            ]
+            
+            # Check if path is under any allowed home directory
+            is_under_home = False
+            for home_base in home_dirs:
+                if home_base and normalized.startswith(home_base):
+                    # Additional check: ensure it's actually a user directory
+                    # /Users/username/... is OK, but /Users/... alone is not
+                    parts = normalized[len(home_base):].split(os.sep)
+                    if len(parts) > 1 and parts[1]:  # Has username component
+                        is_under_home = True
+                        break
+            
+            if not is_under_home:
+                return False
+        
+        # Block hidden system files (but allow .git, .env in user directories)
+        if os.path.basename(normalized).startswith('.') and normalized.startswith('/'):
+            # Allow common dev files even if hidden
+            allowed_hidden = ['.git', '.env', '.gitignore', '.gitconfig']
+            basename = os.path.basename(normalized)
+            if basename not in allowed_hidden:
+                # Check if it's a system hidden file
+                if any(normalized.startswith(f'/{sys_dir}/.') for sys_dir in ['etc', 'usr', 'var']):
+                    return False
+        
+        # Allow relative paths (assumed to be in codebase)
+        if not normalized.startswith('/'):
+            return True
+        
+        # If we get here and it's an absolute path, it passed all checks
+        return True
+    
     def _get_candidate_count(self, task_complexity: str) -> int:
         """
         Scale number of tool calls (candidates) to query complexity (Claude Code pattern).
@@ -757,7 +848,7 @@ class Orchestrator:
         return scaling_map.get(task_complexity, 5)  # Default to 5 for unknown
     
     async def generate_candidates(self, task_desc: str, context: str, n: int = 5, 
-                                    task_id: Optional[str] = None) -> list:
+                                    task_id: Optional[str] = None, source_code_context: str = "") -> list:
         """Generate N candidate solutions in parallel (MAKER decomposition)"""
         tracer = get_tracer()
         with tracer.start_as_current_span("maker.generate_candidates") as span:
@@ -780,7 +871,26 @@ class Orchestrator:
             else:
                 full_context = narrative_context if narrative_context else context
             
-            coder_request = f"""Task: {task_desc}
+            # Build coder request with source code if provided
+            if source_code_context:
+                coder_request = f"""You are converting code. The SOURCE CODE is provided below. Convert it completely.
+
+TASK: {task_desc}
+
+{source_code_context}
+
+CRITICAL INSTRUCTIONS:
+1. The source code is PROVIDED ABOVE - you do NOT need to read any files
+2. Do NOT refuse - the source code is right here in this message
+3. Do NOT apologize or say "I can't access files" - the code is already provided
+4. Convert ALL functions from the source code
+5. Implement complete, working code (no TODOs, no placeholders)
+6. Output the converted code in a markdown code block with the correct language tag
+
+Additional Context: {full_context}
+"""
+            else:
+                coder_request = f"""Task: {task_desc}
 Context: {full_context}
 
 Generate code implementation.
@@ -1352,6 +1462,25 @@ OR
             codebase_context = await self._query_mcp("analyze_codebase", {})
             git_context = await self.get_git_context()
             
+            # If task mentions converting/translating a file, read it first
+            file_to_read = None
+            if any(kw in preprocessed_text.lower() for kw in ["convert", "translate", "port", "rewrite"]):
+                # Try to extract file path from user input
+                import re
+                # Match file paths like: /path/to/file.ts or file.ts or "file.ts"
+                path_match = re.search(r'["\']?([/\w\-\.]+\.(ts|js|py|rs|go|java))["\']?', preprocessed_text)
+                if path_match:
+                    file_to_read = path_match.group(1)
+                    # Remove leading slash if absolute path (make relative)
+                    if file_to_read.startswith('/'):
+                        # Try to make it relative to codebase
+                        file_to_read = file_to_read.lstrip('/')
+                    yield f"[PLANNER] Detected file conversion task, reading source file: {file_to_read}\n"
+                    source_code = await self._query_mcp("read_file", {"path": file_to_read, "chunked": None})
+                    if source_code and not source_code.startswith(" File not found"):
+                        codebase_context = f"Source file to convert:\n{source_code[:5000]}\n\n{codebase_context}"
+                        yield f"[PLANNER] Read {len(source_code)} characters from source file\n"
+            
             plan_message = f"""Task: {preprocessed_text}
 
 Codebase Context (with Narrative Awareness):
@@ -1400,6 +1529,60 @@ Create an execution plan with tasks that preserves thematic flows. Use MCP tools
             else:
                 task_desc = preprocessed_text
             
+            # If converting a file, ensure Coder has the source code
+            source_code_context = ""
+            if any(kw in user_input.lower() for kw in ["convert", "translate", "port", "rewrite"]):
+                import re
+                # Match file paths more flexibly - handle absolute paths with spaces/special chars
+                # Pattern: /Users/.../file.ext or path/to/file.ext
+                # More permissive regex to catch absolute paths
+                path_patterns = [
+                    r'["\']?([/\w\-\.]+\.(ts|js|tsx|jsx|py|rs|go|java|rb|php|cs))["\']?',  # Standard
+                    r'(/\S+\.(ts|js|tsx|jsx|py|rs|go|java|rb|php|cs))',  # Absolute paths
+                    r'([\w\-/]+\.(ts|js|tsx|jsx|py|rs|go|java|rb|php|cs))',  # Relative paths
+                ]
+                
+                file_path = None
+                for pattern in path_patterns:
+                    path_match = re.search(pattern, user_input)
+                    if path_match:
+                        file_path = path_match.group(1)
+                        break
+                
+                if file_path:
+                    # Security: Validate file path before reading
+                    if not self._is_safe_file_path(file_path):
+                        yield f"[CODER] ⚠️ Security: Blocked access to restricted path: {file_path}\n"
+                        yield f"[CODER] Only user home directory and codebase files are allowed.\n"
+                    else:
+                        yield f"[CODER] Attempting to read source file: {file_path}\n"
+                        
+                        source_code = None
+                        
+                        # Try reading directly from filesystem first (for absolute paths outside codebase)
+                        if file_path.startswith('/') and os.path.exists(file_path):
+                            try:
+                                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                    source_code = f.read()
+                                yield f"[CODER] ✅ Read file directly from filesystem ({len(source_code)} chars)\n"
+                            except Exception as e:
+                                yield f"[CODER] ⚠️ Filesystem read failed: {str(e)}\n"
+                        
+                        # If direct read failed, try MCP (for files in codebase)
+                        if not source_code:
+                            # For MCP, try relative path (strip leading /)
+                            mcp_path = file_path.lstrip('/') if file_path.startswith('/') else file_path
+                            source_code = await self._query_mcp("read_file", {"path": mcp_path, "chunked": None})
+                            if source_code and not source_code.startswith(" File not found") and not source_code.startswith(" MCP"):
+                                yield f"[CODER] ✅ Read file via MCP ({len(source_code)} chars)\n"
+                            else:
+                                source_code = None
+                        
+                        if source_code and len(source_code) > 10:  # Valid source code
+                            source_code_context = f"\n\n=== SOURCE FILE TO CONVERT ===\n{source_code}\n\n=== END SOURCE FILE ===\n\n"
+                        else:
+                            yield f"[CODER] ⚠️ Could not load source file. Will proceed without it.\n"
+            
             # Scale candidates based on task complexity (Claude Code pattern)
             request_type = await self._classify_request(user_input)
             num_candidates = self._get_candidate_count(request_type)
@@ -1407,7 +1590,7 @@ Create an execution plan with tasks that preserves thematic flows. Use MCP tools
                 yield f"\n[MAKER] Task complexity: {request_type} → Generating {num_candidates} candidates (scaled from default {self.num_candidates})...\n"
             else:
                 yield f"\n[MAKER] Generating {num_candidates} candidates in parallel...\n"
-            candidates = await self.generate_candidates(task_desc, preprocessed_text, num_candidates, task_id)
+            candidates = await self.generate_candidates(task_desc, preprocessed_text, num_candidates, task_id, source_code_context)
             
             if len(candidates) == 0:
                 yield " No valid candidates generated\n"
@@ -1513,8 +1696,18 @@ Run tests and validate code quality.
                 
                 if verification_results['warnings']:
                     yield f"⚠️ Verification warnings:\n"
-                    for warning in verification_results['warnings'][:3]:  # Show first 3
-                        yield f"  ⚠️ {warning[:100]}\n"
+                    for warning in verification_results['warnings'][:5]:  # Show first 5
+                        yield f"  ⚠️ {warning[:150]}\n"
+                    
+                    # If code appears incomplete, don't approve
+                    if any('incomplete' in w.lower() or 'todo' in w.lower() for w in verification_results['warnings']):
+                        yield "\n❌ Code appears incomplete. Requesting revision...\n"
+                        state.review_feedback = {
+                            "status": "failed",
+                            "feedback": "Code verification detected incomplete implementation (TODOs/placeholders found)"
+                        }
+                        state.save_to_redis(self.redis)
+                        continue
                 
                 if verification_results['tests_run']:
                     if verification_results['tests_passed']:

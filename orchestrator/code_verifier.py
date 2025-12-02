@@ -45,6 +45,40 @@ class CodeVerifier:
         except Exception as e:
             return False, f"Parse error: {str(e)}"
     
+    def check_completeness(self, code: str) -> Tuple[bool, List[str]]:
+        """
+        Check if code is complete (not just stubs/TODOs).
+        
+        Args:
+            code: Code to check
+            
+        Returns:
+            (is_complete, warnings)
+        """
+        warnings = []
+        
+        # Check for TODO/FIXME comments (incomplete implementations)
+        todo_count = len(re.findall(r'\b(TODO|FIXME|XXX|HACK)\b', code, re.IGNORECASE))
+        if todo_count > 0:
+            warnings.append(f"Code contains {todo_count} TODO/FIXME comment(s) - may be incomplete")
+        
+        # Check for placeholder functions (just "pass" or empty bodies)
+        # Python: functions with just "pass" or empty
+        if re.search(r'def\s+\w+[^:]*:\s*(pass|\.\.\.)\s*$', code, re.MULTILINE):
+            warnings.append("Code contains placeholder functions (pass/...) - may be incomplete")
+        
+        # Check for Rust-specific placeholders
+        if '// TODO:' in code or 'unimplemented!' in code or 'todo!' in code:
+            warnings.append("Code contains Rust TODO/unimplemented! macros - may be incomplete")
+        
+        # Check if code is suspiciously short (likely incomplete)
+        # Remove comments and whitespace
+        code_lines = [l for l in code.split('\n') if l.strip() and not l.strip().startswith('//') and not l.strip().startswith('#')]
+        if len(code_lines) < 10:
+            warnings.append("Code is very short - may be incomplete")
+        
+        return len(warnings) == 0, warnings
+    
     def check_imports(self, code: str, codebase_root: Optional[str] = None) -> Tuple[bool, List[str]]:
         """
         Check if imports can be resolved.
@@ -245,7 +279,14 @@ class CodeVerifier:
         types_ok, type_warnings = self.check_basic_types(code)
         results['warnings'].extend(type_warnings)
         
-        # 4. Test execution (if test file exists)
+        # 4. Completeness check (detect TODOs, placeholders, incomplete code)
+        complete, completeness_warnings = self.check_completeness(code)
+        results['warnings'].extend(completeness_warnings)
+        if not complete:
+            # Don't fail, but warn strongly
+            results['warnings'].insert(0, "⚠️ Code appears incomplete - contains TODOs or placeholders")
+        
+        # 5. Test execution (if test file exists)
         if run_tests and file_path:
             test_file = self.find_test_file(file_path)
             if test_file:
