@@ -7,6 +7,7 @@ Implements Spec Section 3.1 - Narrative-aware task decomposition
 from typing import List, Dict, Optional, TYPE_CHECKING
 from dataclasses import dataclass, field
 import json
+import os
 from orchestrator.ee_world_model import CodebaseWorldModel, MelodicLine, ArchitecturalPattern
 
 if TYPE_CHECKING:
@@ -86,9 +87,10 @@ class EEPlannerAgent:
         return enhanced_subtasks
     
     def _construct_narrative_prompt(
-        self, 
-        task_description: str, 
-        context: Dict
+        self,
+        task_description: str,
+        context: Dict,
+        file_content: Optional[str] = None
     ) -> str:
         """
         Build prompt that includes narrative flows and architectural context
@@ -99,10 +101,25 @@ class EEPlannerAgent:
         module_section = self._format_modules(context['modules'], context['confidence'])
         dependency_section = self._format_dependencies(context['dependencies'])
         warning_section = self._format_warnings(context['warnings'])
-        
+
+        # Add source file content section if available
+        source_file_section = ""
+        if file_content:
+            source_file_section = f"""
+SOURCE FILE TO CONVERT:
+
+```
+{file_content}
+```
+
+CRITICAL: You MUST inventory ALL functions, classes, interfaces, and types from the source file above before creating subtasks.
+"""
+
         prompt = f"""You are an expert software architect with deep understanding of this codebase.
 
 TASK: {task_description}
+
+{source_file_section}
 
 BUSINESS NARRATIVE CONTEXT:
 
@@ -238,6 +255,68 @@ Begin:
         
         return {"subtasks": subtasks}
     
+    async def _read_source_file_if_needed(self, task_description: str, orchestrator) -> Optional[str]:
+        """
+        Detect if this is a file conversion task and read the source file.
+
+        Patterns detected:
+        - "convert <file> to <language>"
+        - "translate <file> to <language>"
+        - "port <file> to <language>"
+        - File path in task description
+
+        Returns:
+            File contents if file conversion task detected, None otherwise
+        """
+        import re
+        from pathlib import Path
+
+        # Patterns that indicate file conversion
+        conversion_patterns = [
+            r'convert\s+([^\s]+\.\w+)\s+to',
+            r'translate\s+([^\s]+\.\w+)\s+to',
+            r'port\s+([^\s]+\.\w+)\s+to',
+            r'([^\s]+\.(ts|js|py|rs|go|java|cpp|c|h))\s*-\s*can you convert',
+        ]
+
+        file_path = None
+        for pattern in conversion_patterns:
+            match = re.search(pattern, task_description, re.IGNORECASE)
+            if match:
+                file_path = match.group(1)
+                break
+
+        if not file_path:
+            return None
+
+        # Try to read file via MCP
+        try:
+            print(f"[EE Planner] Detected file conversion task, reading source file: {file_path}")
+
+            # Call MCP read_file tool
+            mcp_url = os.getenv("MCP_URL", "http://host.docker.internal:9001")
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{mcp_url}/api/mcp/tool",
+                    json={"tool": "read_file", "args": {"path": file_path}}
+                ) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        content = result.get("result", "")
+                        if content and not content.startswith(" File not found"):
+                            print(f"[EE Planner] Successfully read source file ({len(content)} chars)")
+                            return content
+                        else:
+                            print(f"[EE Planner] File not found: {file_path}")
+                            return None
+                    else:
+                        print(f"[EE Planner] Failed to read file: HTTP {response.status}")
+                        return None
+        except Exception as e:
+            print(f"[EE Planner] Error reading source file: {e}")
+            return None
+
     async def plan_task_async(self, task_description: str, orchestrator, planner_agent) -> List[EnhancedSubtask]:
         """
         Async version that uses actual MAKER Planner LLM
@@ -255,12 +334,15 @@ Begin:
         print(f"  • Found {len(context['melodic_lines'])} relevant business narratives")
         print(f"  • Identified {len(context['patterns'])} architectural patterns")
         print(f"  • Retrieved {len(context['modules'])} modules")
-        
-        # Step 2: Generate narrative-aware prompt
+
+        # Step 2: Read source file if this is a file conversion task
+        file_content = await self._read_source_file_if_needed(task_description, orchestrator)
+
+        # Step 3: Generate narrative-aware prompt
         print("[2/4] Constructing narrative-aware prompt...")
-        prompt = self._construct_narrative_prompt(task_description, context)
-        
-        # Step 3: Call actual MAKER Planner LLM
+        prompt = self._construct_narrative_prompt(task_description, context, file_content=file_content)
+
+        # Step 4: Call actual MAKER Planner LLM
         print("[3/4] Generating subtasks with MAKER Planner...")
         planner_prompt = orchestrator._load_system_prompt("planner")
         
