@@ -5,6 +5,9 @@ models/devstral/
 # Logs
 logs/*.log
 
+# Output files from file-based streaming
+outputs/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -97,3 +100,6 @@ multi-agent-system-implementation.plan.md
 plan.md
 Dockerfile.llama-cpp
 orchestrator/mcp_wrapper.py
+
+# Test scripts (kept in git for documentation)
+# test_file_streaming.sh is NOT ignored
