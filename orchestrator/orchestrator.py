@@ -725,8 +725,13 @@ Generate code implementation.
     async def maker_vote(self, candidates: list, task_desc: str, k: int = 3) -> tuple:
         """MAKER first-to-K voting on candidates. Returns (winner, vote_counts)"""
         tracer = get_tracer()
-        span = trace_maker_voting(candidates, k)
-        with span:
+        span_context = trace_maker_voting(candidates, k)
+        with span_context as span:
+            # Set initial attributes after entering context
+            span.set_attribute("maker.num_candidates", len(candidates))
+            span.set_attribute("maker.k_value", k)
+            span.set_attribute("maker.num_voters", 2 * k - 1)
+            
             if len(candidates) == 0:
                 span.set_attribute("maker.winner", "none")
                 return None, {}

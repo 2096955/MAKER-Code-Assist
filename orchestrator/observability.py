@@ -145,13 +145,13 @@ def trace_agent_call(agent_name: str, model: str = "default"):
     return decorator
 
 def trace_maker_voting(candidates: list, k: int):
-    """Trace MAKER voting process"""
+    """Trace MAKER voting process
+    
+    Returns a context manager that must be entered with 'with'.
+    Set attributes inside the context.
+    """
     tracer = get_tracer()
-    span = tracer.start_as_current_span("maker.voting")
-    span.set_attribute("maker.num_candidates", len(candidates))
-    span.set_attribute("maker.k_value", k)
-    span.set_attribute("maker.num_voters", 2 * k - 1)
-    return span
+    return tracer.start_as_current_span("maker.voting")
 
 def trace_memory_query(query: str, compression_ratio: float):
     """Trace memory query"""
