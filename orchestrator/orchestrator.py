@@ -1429,6 +1429,24 @@ Be direct. Output working code in a markdown code block. No questions."""
                 if specified_path.startswith('/Users/anthonylui'):
                     container_path = specified_path.replace('/Users/anthonylui', '/host/Users/anthonylui')
 
+                # Check Redis memory first - have we seen this codebase before?
+                memory_key = f"codebase_overview:{specified_path}"
+                try:
+                    cached = self.redis.get(memory_key)
+                    if cached:
+                        overview = json.loads(cached)
+                        yield f"[MEMORY] Recalled from previous analysis:\n\n"
+                        yield f"{overview.get('description', '')}\n\n"
+                        yield f"**Files:** {overview.get('total_files', 'N/A')}\n"
+                        yield f"**Lines:** {overview.get('total_lines', 0):,}\n"
+                        if overview.get('lang_counts'):
+                            yield f"**Code:** {', '.join(f'{k} ({v})' for k, v in sorted(overview['lang_counts'].items(), key=lambda x: x[1], reverse=True))}\n"
+                        if overview.get('top_dirs'):
+                            yield f"**Structure:** {', '.join(overview['top_dirs'])}\n"
+                        return
+                except:
+                    pass  # Cache miss, continue to analyze
+
                 # Try to analyze the specified path directly from filesystem
                 if os.path.exists(container_path) and os.path.isdir(container_path):
                     yield f"[ANALYST] Analyzing `{specified_path}`...\n\n"
@@ -1481,6 +1499,7 @@ Be direct. Output working code in a markdown code block. No questions."""
                                 pass
 
                     # Extract first substantive paragraph from README
+                    description_text = ""
                     if readme_content:
                         lines = readme_content.split('\n')
                         description = []
@@ -1493,7 +1512,8 @@ Be direct. Output working code in a markdown code block. No questions."""
                                     break
 
                         if description:
-                            yield f"{' '.join(description)[:300]}\n\n"
+                            description_text = ' '.join(description)[:300]
+                            yield f"{description_text}\n\n"
 
                     yield f"**Files:** {total_files}\n"
                     yield f"**Lines:** {total_lines:,}\n"
@@ -1501,6 +1521,21 @@ Be direct. Output working code in a markdown code block. No questions."""
                         yield f"**Code:** {', '.join(f'{k} ({v})' for k, v in sorted(lang_counts.items(), key=lambda x: x[1], reverse=True))}\n"
                     if top_dirs:
                         yield f"**Structure:** {', '.join(sorted(top_dirs)[:8])}\n"
+
+                    # Save to Redis memory for next time
+                    try:
+                        overview = {
+                            'path': specified_path,
+                            'description': description_text,
+                            'total_files': total_files,
+                            'total_lines': total_lines,
+                            'lang_counts': lang_counts,
+                            'top_dirs': sorted(top_dirs)[:8],
+                            'analyzed_at': int(time.time())
+                        }
+                        self.redis.setex(memory_key, 86400 * 7, json.dumps(overview))  # 7 day TTL
+                    except:
+                        pass  # Don't fail if Redis unavailable
 
                     return
                 else:
