@@ -49,6 +49,10 @@ class CompactRequest(BaseModel):
     instructions: Optional[str] = None
 
 
+class ClarificationRequest(BaseModel):
+    answers: dict  # Dict mapping question numbers/keys to answers
+
+
 # OpenAI-compatible request models
 class ChatMessage(BaseModel):
     role: str
@@ -383,6 +387,174 @@ async def checkpoint_session(session_id: str, feature_name: str):
     
     result = await orchestrator.checkpoint_session(session_id, feature_name)
     return result
+
+
+@app.post("/api/clarify/{task_id}")
+async def clarify_task(task_id: str, request: ClarificationRequest):
+    """
+    Provide answers to planner clarification questions and resume workflow.
+    
+    Args:
+        task_id: Task identifier
+        request: Answers to clarification questions
+        
+    Returns:
+        Streaming response with resumed workflow output
+    """
+    # Load clarification state from Redis
+    clarification_data = orchestrator.redis.get(f"clarification:{task_id}")
+    if not clarification_data:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Clarification state not found for task {task_id}. May have expired (1h TTL) or task doesn't need clarification."
+        )
+    
+    try:
+        clarification_state = json.loads(clarification_data)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Invalid clarification state format")
+    
+    # Inject answers into original task
+    original_task = clarification_state.get("original_task", "")
+    questions = clarification_state.get("questions", [])
+    answers = request.answers
+    
+    # Format clarified context
+    clarified_context = ""
+    for i, question in enumerate(questions, 1):
+        answer = answers.get(str(i)) or answers.get(f"question_{i}") or answers.get(question) or "Not specified"
+        clarified_context += f"Q{i}: {question}\nA{i}: {answer}\n\n"
+    
+    # Clear clarification state
+    orchestrator.redis.delete(f"clarification:{task_id}")
+    
+    # Load existing plan and resume from CODING phase
+    async def generate():
+        try:
+            from orchestrator.orchestrator import TaskState
+            state = TaskState.load_from_redis(task_id, orchestrator.redis)
+            
+            if not state:
+                yield f"data: {json.dumps({'error': f'Task state not found for {task_id}'})}\n\n"
+                return
+            
+            if not state.plan:
+                yield f"data: {json.dumps({'error': 'No plan found in task state. Cannot resume from coding phase.'})}\n\n"
+                return
+            
+            # Inject clarifications into plan context
+            if "clarified_context" not in state.plan:
+                state.plan["clarified_context"] = {}
+            state.plan["clarified_context"] = clarified_context
+            state.status = "coding"  # Skip replanning
+            state.save_to_redis(orchestrator.redis)
+            
+            resume_msg = '[SYSTEM] Resuming workflow from coding phase with clarifications...\n'
+            yield f"data: {json.dumps({'chunk': resume_msg})}\n\n"
+            
+            # Resume from coding phase (skip preprocessing and planning)
+            async for chunk in orchestrator._resume_from_coding(state, clarified_context):
+                yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+            yield f"data: {json.dumps({'done': True})}\n\n"
+        except Exception as e:
+            import traceback
+            yield f"data: {json.dumps({'error': str(e), 'traceback': traceback.format_exc()})}\n\n"
+    
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
+
+
+@app.get("/api/task/{task_id}/melodic-line")
+async def get_melodic_line(task_id: str):
+    """
+    Get the complete melodic line (reasoning chain) for a task.
+
+    The melodic line shows how each agent built on previous agents' reasoning,
+    creating a coherent chain from preprocessor → planner → coder → reviewer.
+
+    Returns:
+        List of actions in chronological order with reasoning
+    """
+    if not orchestrator.workflow_memory or not orchestrator.workflow_memory.enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="Melodic line memory not enabled. Set ENABLE_MELODIC_MEMORY=true and install kuzu"
+        )
+
+    melodic_line = orchestrator.workflow_memory.get_melodic_line(task_id)
+
+    if not melodic_line:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No melodic line found for task {task_id}. Task may not exist or melodic memory was disabled."
+        )
+
+    return {
+        "task_id": task_id,
+        "melodic_line": melodic_line,
+        "length": len(melodic_line),
+        "agents": [action["agent"] for action in melodic_line],
+        "summary": f"Workflow chain: {' → '.join([action['agent'] for action in melodic_line])}"
+    }
+
+
+@app.get("/api/melodic-memory/stats")
+async def get_melodic_memory_stats():
+    """
+    Get statistics about the melodic line memory system.
+
+    Returns:
+        Statistics including total tasks, actions, and melodic line links
+    """
+    if not orchestrator.workflow_memory:
+        return {"enabled": False, "message": "Melodic memory not initialized"}
+
+    stats = orchestrator.workflow_memory.get_stats()
+    return stats
+
+
+@app.get("/api/task/{task_id}/agent/{agent}/context")
+async def get_agent_context(task_id: str, agent: str):
+    """
+    Get the melodic line context that a specific agent sees.
+
+    This shows what reasoning chain the agent had access to when making decisions.
+
+    Args:
+        task_id: Task identifier
+        agent: Agent name (preprocessor, planner, coder, reviewer)
+
+    Returns:
+        The formatted melodic line context string
+    """
+    if not orchestrator.workflow_memory or not orchestrator.workflow_memory.enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="Melodic line memory not enabled"
+        )
+
+    context = orchestrator.workflow_memory.get_context_for_agent(task_id, agent)
+
+    if not context:
+        return {
+            "task_id": task_id,
+            "agent": agent,
+            "context": "",
+            "message": "No context available (agent hasn't run yet or task doesn't exist)"
+        }
+
+    return {
+        "task_id": task_id,
+        "agent": agent,
+        "context": context,
+        "length": len(context)
+    }
 
 
 if __name__ == "__main__":

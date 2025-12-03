@@ -58,6 +58,9 @@ from orchestrator.skill_matcher import SkillMatcher
 from orchestrator.skill_extractor import SkillExtractor
 from orchestrator.skill_registry import SkillRegistry
 
+# Kùzu melodic line memory imports
+from orchestrator.kuzu_memory import SharedWorkflowMemory
+
 
 @dataclass
 class ConversationMessage:
@@ -467,7 +470,8 @@ class Orchestrator:
         self.world_model = HierarchicalMemoryNetwork(
             codebase_path=codebase_root,
             compression_ratios=[0.3, 0.2, 0.15],
-            preservation_thresholds=[0.85, 0.75, 0.70]
+            preservation_thresholds=[0.85, 0.75, 0.70],
+            redis_client=self.redis
         )
         
         # Initialize world model if not already done
@@ -528,6 +532,95 @@ class Orchestrator:
         else:
             self.skill_extractor = None
             self.skill_registry = None
+
+        # Codebase watcher (real-time sync) - Phase 3
+        self.codebase_watcher = None
+        enable_watcher = os.getenv("ENABLE_CODEBASE_WATCHER", "true").lower() == "true"
+        if self.ee_mode and enable_watcher:
+            try:
+                from orchestrator.codebase_watcher import CodebaseWatcher
+                
+                def update_world_model(file_path: str, deleted: bool = False):
+                    """Update world model when file changes"""
+                    try:
+                        if deleted:
+                            # Remove L₀ node and prune orphaned L₁ entities
+                            if file_path in self.world_model.file_to_l0:
+                                l0_id = self.world_model.file_to_l0[file_path]
+                                # Remove L₀ node
+                                if l0_id in self.world_model.l0_nodes:
+                                    # Get child L₁ entities
+                                    l1_children = self.world_model.l0_nodes[l0_id].child_ids
+                                    # Remove L₀ node
+                                    del self.world_model.l0_nodes[l0_id]
+                                    del self.world_model.file_to_l0[file_path]
+                                    # Prune orphaned L₁ entities
+                                    for l1_id in l1_children:
+                                        if l1_id in self.world_model.l1_nodes:
+                                            entity_name = self.world_model.l1_nodes[l1_id].metadata.get("name", "")
+                                            entity_key = f"{file_path}::{entity_name}"
+                                            if entity_key in self.world_model.entity_to_l1:
+                                                del self.world_model.entity_to_l1[entity_key]
+                                            del self.world_model.l1_nodes[l1_id]
+                                    # Update code graph if available
+                                    if self.world_model.code_graph:
+                                        # Remove nodes from graph (would need graph method for this)
+                                        pass
+                                    logger.info(f"Removed world model entries for deleted file: {file_path}")
+                        else:
+                            # Re-index modified file
+                            full_path = Path(self.codebase_root) / file_path
+                            if full_path.exists():
+                                try:
+                                    with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                        content = f.read()
+                                    
+                                    # Skip if file too large
+                                    if len(content) > 1_000_000:  # 1MB limit
+                                        logger.warning(f"File too large to index: {file_path} ({len(content)} bytes)")
+                                        return
+                                    
+                                    # Add to L₀ (or update existing)
+                                    l0_id = self.world_model.add_code_file(file_path, content)
+                                    # Extract entities to L₁
+                                    self.world_model.extract_entities(l0_id)
+                                    # Update code graph if available (handled in extract_entities)
+                                    logger.info(f"Updated world model for: {file_path}")
+                                except PermissionError:
+                                    logger.warning(f"Permission denied reading file: {file_path}")
+                                except Exception as e:
+                                    logger.warning(f"Error updating world model for {file_path}: {e}")
+                    except Exception as e:
+                        logger.error(f"Error in world model update callback: {e}")
+                
+                self.codebase_watcher = CodebaseWatcher(
+                    codebase_root=self.codebase_root,
+                    update_callback=update_world_model
+                )
+                self.codebase_watcher.start()
+                print("[Orchestrator] Codebase watcher enabled (real-time sync)")
+            except ImportError:
+                logger.warning("watchdog not installed, codebase watcher disabled")
+            except Exception as e:
+                logger.warning(f"Failed to initialize codebase watcher: {e}")
+        
+        # Kùzu melodic line memory (enables coherent reasoning across agents)
+        self.enable_melodic_memory = os.getenv("ENABLE_MELODIC_MEMORY", "true").lower() == "true"
+        if self.enable_melodic_memory:
+            try:
+                kuzu_db_path = os.getenv("KUZU_DB_PATH", "./kuzu_workflow_db")
+                self.workflow_memory = SharedWorkflowMemory(db_path=kuzu_db_path)
+                if self.workflow_memory.enabled:
+                    print("[Orchestrator] ✨ Melodic line memory enabled (Kùzu graph)")
+                    print(f"[Orchestrator]    Agents will maintain coherent reasoning chain")
+                else:
+                    print("[Orchestrator] ⚠️  Kùzu not available, melodic memory disabled")
+                    self.workflow_memory = None
+            except Exception as e:
+                print(f"[Orchestrator] Failed to initialize melodic memory: {e}")
+                self.workflow_memory = None
+        else:
+            self.workflow_memory = None
 
         # Log MAKER mode for visibility
         if self.maker_mode == "low":
@@ -761,6 +854,35 @@ class Orchestrator:
         if not self.tool_permissions.is_tool_allowed(tool):
             return f" Tool '{tool}' is blocked by .maker.json configuration. Allowed tools: {self.tool_permissions.get_config_summary()}"
         
+        # Trace graph queries
+        if tool in ("find_callers", "impact_analysis"):
+            from orchestrator.observability import trace_graph_query
+            symbol = args.get("symbol", "")
+            with trace_graph_query(tool, symbol):
+                try:
+                    async with httpx.AsyncClient(timeout=self.mcp_timeout) as client:
+                        response = await client.post(
+                            f"{self.mcp_url}/api/mcp/tool",
+                            json={"tool": tool, "args": args}
+                        )
+                        if response.status_code == 200:
+                            result = response.json()
+                            result_data = result.get("result", "")
+                            # Calculate result count for tracing
+                            if isinstance(result_data, list):
+                                result_count = len(result_data)
+                            else:
+                                result_count = len(str(result_data).split('\n')) if result_data else 0
+                            # Update span attribute (if span is still active)
+                            # Note: span context manager handles this automatically
+                            return result_data
+                        elif response.status_code == 403:
+                            return f" Tool '{tool}' is blocked by server configuration"
+                        return f" MCP error: {response.status_code}"
+                except Exception as e:
+                    return f" MCP query failed: {str(e)}"
+        
+        # Non-graph queries (no special tracing)
         try:
             async with httpx.AsyncClient(timeout=self.mcp_timeout) as client:
                 response = await client.post(
@@ -961,14 +1083,20 @@ class Orchestrator:
             # Get narrative-aware context for Coder
             coder_memory = self.agent_memories[AgentName.CODER]
             narrative_context = coder_memory.get_context_for_agent(task_desc)
-            
+
+            # Get MELODIC LINE context (KEY: Coder sees full reasoning chain!)
+            melodic_line_context = ""
+            if task_id and self.workflow_memory:
+                melodic_line_context = self.workflow_memory.get_context_for_agent(task_id, "coder")
+                print(f"[DEBUG] Melodic line context injected: {len(melodic_line_context)} chars")
+
             if task_id:
                 compressor = self.get_context_compressor(task_id)
                 compressed_context = await compressor.get_context()
                 stats = compressor.get_stats()
                 print(f"[DEBUG] Context compression stats: {stats}")
-                # Combine narrative context with compressed context
-                full_context = f"{narrative_context}\n\n[Conversation History]\n{compressed_context}"
+                # Combine ALL contexts: narrative + melodic line + conversation history
+                full_context = f"{narrative_context}\n\n{melodic_line_context}\n\n[Conversation History]\n{compressed_context}"
             else:
                 full_context = narrative_context if narrative_context else context
             
@@ -1507,18 +1635,23 @@ OR
     async def orchestrate_workflow(self, task_id: str, user_input: str) -> AsyncGenerator[str, None]:
         """Main orchestration loop: preprocess → plan → code → review"""
 
+        # Initialize melodic line memory for this task
+        if self.workflow_memory:
+            self.workflow_memory.create_task(task_id, user_input)
+            yield f"[MELODIC LINE] Workflow memory initialized for coherent reasoning\n"
+
         request_type = await self._classify_request(user_input)
-        
+
         if request_type == "simple_code":
             async for chunk in self._simple_code_request(task_id, user_input):
                 yield chunk
             return
-        
+
         if request_type == "question":
             async for chunk in self._answer_question(task_id, user_input):
                 yield chunk
             return
-        
+
         state = TaskState(task_id=task_id, user_input=user_input, preprocessed_input="")
         state.status = "preprocessing"
         state.save_to_redis(self.redis)
@@ -1550,11 +1683,25 @@ OR
         preprocessed_json = await self.preprocess_input(task_id, user_input)
         preprocessed_data = json.loads(preprocessed_json)
         preprocessed_text = preprocessed_data.get("preprocessed_text", user_input)
-        
+
         state.preprocessed_input = preprocessed_text
         state.status = "planning"
         state.save_to_redis(self.redis)
         yield f"[PREPROCESSOR] Converted input to: {preprocessed_text}\n"
+
+        # Add to melodic line
+        if self.workflow_memory:
+            preprocessor_reasoning = f"Converted {'multi-modal' if preprocessed_data.get('original_type') != 'text' else 'text'} input. Detected intent: {preprocessed_text[:100]}"
+            self.workflow_memory.add_action(
+                task_id=task_id,
+                agent="preprocessor",
+                action_type="preprocess",
+                input_data=user_input,
+                output_data=preprocessed_text,
+                reasoning=preprocessor_reasoning,
+                temperature=0.1
+            )
+            self.workflow_memory.update_task_status(task_id, "planning")
         
         # Try EE Planner first if enabled
         if self.ee_mode:
@@ -1616,17 +1763,60 @@ OR
                             codebase_context = f"Source file to convert:\n{source_code[:5000]}\n\n{codebase_context}"
                             yield f"[PLANNER] Read {len(source_code)} characters from source file\n"
             
+            # PROACTIVE GRAPH CONTEXT for Planner
+            # Extract key symbols from task (function/class names)
+            import re
+            # Match CamelCase, snake_case, and common patterns
+            symbols = re.findall(r'\b([A-Z][a-z]+[A-Z]\w+|[a-z_]+\(|[A-Z]\w+)\b', preprocessed_text)
+            symbols = [s.rstrip('(') for s in symbols if len(s) > 3][:5]  # Top 5 symbols
+            
+            # Query graph for each symbol
+            graph_context = ""
+            enable_code_graph = os.getenv("ENABLE_CODE_GRAPH", "true").lower() == "true"
+            if enable_code_graph and self.world_model.code_graph:
+                # Filter symbols: only query if they exist in graph
+                existing_symbols = []
+                for symbol in symbols:
+                    # Check if any node ends with ::symbol (qualified ID match)
+                    if any(node.endswith(f"::{symbol}") for node in self.world_model.code_graph.graph.nodes):
+                        existing_symbols.append(symbol)
+                
+                # Only query existing symbols
+                for symbol in existing_symbols:
+                    try:
+                        callers_result = await self._query_mcp("find_callers", {"symbol": symbol})
+                        if callers_result and not callers_result.startswith(" ") and not callers_result.startswith("⚠") and not callers_result.startswith(" MCP"):
+                            # Parse result (could be list or formatted string)
+                            if isinstance(callers_result, list):
+                                callers_str = ", ".join(callers_result[:3])  # Top 3
+                            else:
+                                callers_str = str(callers_result)[:200]
+                            graph_context += f"\n[GRAPH] {symbol} is called by: {callers_str}"
+                        
+                        impact_result = await self._query_mcp("impact_analysis", {"symbol": symbol})
+                        if impact_result and not impact_result.startswith(" ") and not impact_result.startswith("⚠") and not impact_result.startswith(" MCP"):
+                            if isinstance(impact_result, list):
+                                impact_str = ", ".join(impact_result[:3])  # Top 3
+                            else:
+                                impact_str = str(impact_result)[:200]
+                            graph_context += f"\n[GRAPH] Changing {symbol} affects: {impact_str}"
+                    except Exception as e:
+                        logger.debug(f"Graph query failed for {symbol}: {e}")
+            
             plan_message = f"""Task: {preprocessed_text}
 
 Codebase Context (with Narrative Awareness):
 {narrative_context}
+
+Knowledge Graph Context:
+{graph_context if graph_context else "No graph data available yet. Run codebase indexing first."}
 
 Additional Context (from MCP):
 {codebase_context}
 
 {git_context}
 
-Create an execution plan with tasks that preserves thematic flows. Use MCP tools (read_file, search_docs, find_references) or RAG tools (rag_search, rag_query) if you need more context.
+Create an execution plan with tasks that preserves thematic flows. Use MCP tools (read_file, search_docs, find_references, find_callers, impact_analysis) or RAG tools (rag_search, rag_query) if you need more context.
 """
             
             plan_json = ""
@@ -1635,6 +1825,41 @@ Create an execution plan with tasks that preserves thematic flows. Use MCP tools
                 plan_json += chunk
                 yield chunk
             
+            # Check for clarification request
+            enable_clarification = os.getenv("ENABLE_PLANNER_CLARIFICATION", "true").lower() == "true"
+            if enable_clarification:
+                try:
+                    # Try to parse JSON from planner response
+                    plan_data = json.loads(plan_json)
+                    if plan_data.get("need_clarification"):
+                        # Store clarification state in Redis
+                        clarification_state = {
+                            "task_id": task_id,
+                            "questions": plan_data.get("questions", []),
+                            "context": plan_data.get("context", ""),
+                            "original_task": preprocessed_text,
+                            "timestamp": time.time()
+                        }
+                        self.redis.setex(
+                            f"clarification:{task_id}",
+                            3600,  # 1 hour TTL
+                            json.dumps(clarification_state)
+                        )
+                        # Yield questions to user
+                        yield f"\n[PLANNER] Need clarification:\n"
+                        for i, q in enumerate(plan_data.get("questions", []), 1):
+                            yield f"  {i}. {q}\n"
+                        yield f"\n[SYSTEM] Please provide answers via POST /api/clarify/{task_id} endpoint\n"
+                        yield f"[SYSTEM] Workflow paused. Waiting for clarification...\n"
+                        # Pause workflow - don't proceed to coding
+                        state.status = "waiting_clarification"
+                        state.save_to_redis(self.redis)
+                        return  # Exit workflow, wait for user response
+                except (json.JSONDecodeError, KeyError):
+                    # Not a clarification request, continue with normal plan processing
+                    pass
+            
+            # Normal plan processing
             try:
                 state.plan = json.loads(plan_json)
             except json.JSONDecodeError:
@@ -1647,7 +1872,30 @@ Create an execution plan with tasks that preserves thematic flows. Use MCP tools
                         state.plan = {"plan": [{"id": "task_1", "description": preprocessed_text, "assigned_to": "coder"}]}
                 else:
                     state.plan = {"plan": [{"id": "task_1", "description": preprocessed_text, "assigned_to": "coder"}]}
-        
+
+        # Add planner action to melodic line
+        if self.workflow_memory and state.plan:
+            # Get melodic line context (planner reads preprocessor's reasoning)
+            melodic_context = self.workflow_memory.get_context_for_agent(task_id, "planner")
+
+            plan_count = len(state.plan.get("plan", []))
+            planner_reasoning = f"Created {plan_count} subtasks based on preprocessor's understanding. "
+            if state.plan.get("ee_mode"):
+                planner_reasoning += f"Used EE planner with {state.plan.get('narrative_count', 0)} narratives preserved."
+            else:
+                planner_reasoning += "Used standard planner with codebase context."
+
+            self.workflow_memory.add_action(
+                task_id=task_id,
+                agent="planner",
+                action_type="plan",
+                input_data=f"{preprocessed_text}\n\n{melodic_context[:500]}",
+                output_data=json.dumps(state.plan)[:2000],
+                reasoning=planner_reasoning,
+                temperature=0.3
+            )
+            self.workflow_memory.update_task_status(task_id, "coding")
+
         state.status = "coding"
         state.save_to_redis(self.redis)
         
@@ -1725,6 +1973,41 @@ Create an execution plan with tasks that preserves thematic flows. Use MCP tools
                         else:
                             yield f"[CODER] ⚠️ Could not load source file. Will proceed without it.\n"
             
+            # PROACTIVE GRAPH CHECK for Coder
+            # Extract function/class names from task description
+            enable_code_graph = os.getenv("ENABLE_CODE_GRAPH", "true").lower() == "true"
+            if enable_code_graph:
+                task_entities = re.findall(r'\b(def|class)\s+(\w+)', task_desc)
+                if not task_entities:
+                    # Try to extract from user input or plan
+                    task_entities = re.findall(r'\b([A-Z][a-z]+[A-Z]\w+|[a-z_]+)\b', task_desc)
+                    # Convert to (type, name) format
+                    task_entities = [("unknown", name) for name in task_entities[:3]]
+                
+                if task_entities:
+                    graph_warnings = []
+                    for entity_type, entity_name in task_entities[:3]:  # Top 3
+                        # Check if modifying existing function
+                        try:
+                            callers_result = await self._query_mcp("find_callers", {"symbol": entity_name})
+                            if callers_result and not callers_result.startswith(" ") and not callers_result.startswith("⚠") and not callers_result.startswith(" MCP"):
+                                if isinstance(callers_result, list):
+                                    caller_count = len(callers_result)
+                                else:
+                                    caller_count = len(str(callers_result).split('\n')) if callers_result else 0
+                                if caller_count > 0:
+                                    graph_warnings.append(
+                                        f"⚠️ {entity_name} has {caller_count} existing callers - ensure backward compatibility"
+                                    )
+                        except Exception as e:
+                            logger.debug(f"Graph check failed for {entity_name}: {e}")
+                    
+                    if graph_warnings:
+                        for warning in graph_warnings:
+                            yield f"[GRAPH] {warning}\n"
+                        # Inject warnings into Coder context
+                        source_code_context = f"{source_code_context}\n\nGRAPH WARNINGS:\n" + "\n".join(graph_warnings)
+            
             # Scale candidates based on task complexity (Claude Code pattern)
             request_type = await self._classify_request(user_input)
             num_candidates = self._get_candidate_count(request_type)
@@ -1747,13 +2030,30 @@ Create an execution plan with tasks that preserves thematic flows. Use MCP tools
             
             yield f"[MAKER] Votes: {vote_counts}\n"
             yield f"[CODER] Winner output:\n{code_output[:500]}...\n"
-            
+
+            # Add coder's winning output to melodic line
+            if self.workflow_memory:
+                winner_label = max(vote_counts, key=vote_counts.get)
+                coder_reasoning = f"Generated {len(candidates)} candidates. Winner (candidate {winner_label}) chosen by MAKER voting with {vote_counts[winner_label]} votes. "
+                coder_reasoning += f"Implemented based on planner's {len(state.plan.get('plan', []))} subtasks while maintaining preprocessor's detected intent."
+
+                self.workflow_memory.add_action(
+                    task_id=task_id,
+                    agent="coder",
+                    action_type="generate_code",
+                    input_data=task_desc,
+                    output_data=code_output[:3000],
+                    reasoning=coder_reasoning,
+                    temperature=0.3  # Winner's temperature (could track this)
+                )
+                self.workflow_memory.update_task_status(task_id, "reviewing")
+
             compressor.add_message("assistant", f"Generated code:\n{code_output[:2000]}")
-            
+
             # Proactive compression check after adding message (OpenCode pattern)
             # This ensures we compress before context gets too large
             await compressor.compress_if_needed()
-            
+
             state.code = code_output
             state.status = "reviewing"
             state.context_stats = compressor.get_stats()
@@ -1788,7 +2088,7 @@ Run tests and validate code quality.
             compressor.add_message("reviewer", review_output[:1000])
             # Proactive compression check after adding reviewer feedback
             await compressor.compress_if_needed()
-            
+
             try:
                 state.review_feedback = json.loads(review_output)
             except json.JSONDecodeError:
@@ -1796,10 +2096,35 @@ Run tests and validate code quality.
                     state.review_feedback = {"status": "approved"}
                 else:
                     state.review_feedback = {"status": "failed", "feedback": review_output}
-            
+
+            # Add reviewer action to melodic line
+            if self.workflow_memory:
+                # Reviewer reads ENTIRE melodic line (preprocessor → planner → coder)
+                melodic_context = self.workflow_memory.get_context_for_agent(task_id, "reviewer")
+
+                reviewer_type = "Planner reflection" if self.maker_mode == "low" else "Dedicated reviewer (Qwen 32B)"
+                review_status = state.review_feedback.get("status", "unknown")
+                reviewer_reasoning = f"Used {reviewer_type}. Validated code against plan and preprocessor's intent. "
+                reviewer_reasoning += f"Result: {review_status}. "
+                if review_status == "failed":
+                    reviewer_reasoning += f"Feedback: {state.review_feedback.get('feedback', '')[:100]}"
+
+                self.workflow_memory.add_action(
+                    task_id=task_id,
+                    agent="reviewer",
+                    action_type="review",
+                    input_data=code_output[:1000],
+                    output_data=review_output[:1000],
+                    reasoning=reviewer_reasoning,
+                    temperature=0.1
+                )
+
+                if review_status == "approved":
+                    self.workflow_memory.update_task_status(task_id, "complete")
+
             state.context_stats = compressor.get_stats()
             state.save_to_redis(self.redis)
-            
+
             # Check if approved
             if state.review_feedback.get("status") == "approved":
                 # Self-verification loop: Pre-flight checks before returning code (kilocode pattern)
@@ -2013,6 +2338,297 @@ Run tests and validate code quality.
         )
         
         return result
+    
+    async def _resume_from_coding(self, state: 'TaskState', clarified_context: str = "") -> AsyncGenerator[str, None]:
+        """
+        Resume workflow from coding phase after clarification.
+        
+        Skips preprocessing and planning, goes directly to code generation.
+        
+        Args:
+            state: TaskState with existing plan
+            clarified_context: Clarified context to inject into coding phase
+            
+        Yields:
+            Streaming output from coding phase onwards
+        """
+        from orchestrator.orchestrator import TaskState
+        
+        task_id = state.task_id
+        compressor = self.get_context_compressor(task_id)
+        
+        # Add clarified context to conversation history
+        if clarified_context:
+            compressor.add_message("user", f"Clarifications provided:\n{clarified_context}")
+            await compressor.compress_if_needed()
+        
+        # Get task description from plan
+        if state.plan and "plan" in state.plan and len(state.plan["plan"]) > 0:
+            task = state.plan["plan"][0]
+            task_desc = task.get("description", "")
+            # Inject clarified context into task description if provided
+            if clarified_context:
+                task_desc = f"{task_desc}\n\nClarifications:\n{clarified_context}"
+        else:
+            task_desc = state.preprocessed_input or ""
+            if clarified_context:
+                task_desc = f"{task_desc}\n\nClarifications:\n{clarified_context}"
+        
+        state.status = "coding"
+        state.save_to_redis(self.redis)
+        
+        yield f"[SYSTEM] Resuming from coding phase with clarified context...\n"
+        yield f"[PLANNER] Using existing plan (skipping replanning)\n"
+        
+        # Display plan subtasks
+        if state.plan and "plan" in state.plan:
+            for subtask in state.plan["plan"]:
+                yield f"  • {subtask.get('description', '')}\n"
+        
+        # 3. CODE (iterate with Reviewer until approved)
+        coder_prompt = self._load_system_prompt("coder")
+        
+        max_iterations = 3
+        while state.iteration_count < max_iterations:
+            state.iteration_count += 1
+            
+            # Get current task description
+            if state.plan and "plan" in state.plan and len(state.plan["plan"]) > 0:
+                task = state.plan["plan"][0]
+                current_task_desc = task.get("description", task_desc)
+            else:
+                current_task_desc = task_desc
+            
+            # If converting a file, ensure Coder has the source code
+            source_code_context = ""
+            if any(kw in current_task_desc.lower() for kw in ["convert", "translate", "port", "rewrite"]):
+                import re
+                path_patterns = [
+                    r'["\']?([/\w\-\.]+\.(ts|js|tsx|jsx|py|rs|go|java|rb|php|cs))["\']?',
+                    r'(/\S+\.(ts|js|tsx|jsx|py|rs|go|java|rb|php|cs))',
+                    r'([\w\-/]+\.(ts|js|tsx|jsx|py|rs|go|java|rb|php|cs))',
+                ]
+                
+                file_path = None
+                for pattern in path_patterns:
+                    path_match = re.search(pattern, current_task_desc)
+                    if path_match:
+                        file_path = path_match.group(1)
+                        if '/' in file_path or file_path.startswith('/'):
+                            break
+                
+                if file_path:
+                    if not self._is_safe_file_path(file_path):
+                        yield f"[CODER] ⚠️ Security: Blocked access to restricted path: {file_path}\n"
+                    else:
+                        yield f"[CODER] Attempting to read source file: {file_path}\n"
+                        
+                        source_code = None
+                        if file_path.startswith('/') and os.path.exists(file_path):
+                            try:
+                                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                    source_code = f.read()
+                                yield f"[CODER] ✅ Read file directly from filesystem ({len(source_code)} chars)\n"
+                            except Exception as e:
+                                yield f"[CODER] ⚠️ Filesystem read failed: {str(e)}\n"
+                        
+                        if not source_code:
+                            mcp_path = file_path.lstrip('/') if file_path.startswith('/') else file_path
+                            source_code = await self._query_mcp("read_file", {"path": mcp_path, "chunked": None})
+                            if source_code and not source_code.startswith(" File not found") and not source_code.startswith(" MCP"):
+                                yield f"[CODER] ✅ Read file via MCP ({len(source_code)} chars)\n"
+                            else:
+                                source_code = None
+                        
+                        if source_code and len(source_code) > 10:
+                            source_code_context = f"\n\n=== SOURCE FILE TO CONVERT ===\n{source_code}\n\n=== END SOURCE FILE ===\n\n"
+                        else:
+                            yield f"[CODER] ⚠️ Could not load source file. Will proceed without it.\n"
+            
+            # PROACTIVE GRAPH CHECK for Coder
+            enable_code_graph = os.getenv("ENABLE_CODE_GRAPH", "true").lower() == "true"
+            if enable_code_graph:
+                import re
+                task_entities = re.findall(r'\b(def|class)\s+(\w+)', current_task_desc)
+                if not task_entities:
+                    task_entities = re.findall(r'\b([A-Z][a-z]+[A-Z]\w+|[a-z_]+)\b', current_task_desc)
+                    task_entities = [("unknown", name) for name in task_entities[:3]]
+                
+                if task_entities:
+                    graph_warnings = []
+                    for entity_type, entity_name in task_entities[:3]:
+                        try:
+                            callers_result = await self._query_mcp("find_callers", {"symbol": entity_name})
+                            if callers_result and not callers_result.startswith(" ") and not callers_result.startswith("⚠") and not callers_result.startswith(" MCP"):
+                                if isinstance(callers_result, list):
+                                    caller_count = len(callers_result)
+                                else:
+                                    caller_count = len(str(callers_result).split('\n')) if callers_result else 0
+                                if caller_count > 0:
+                                    graph_warnings.append(
+                                        f"⚠️ {entity_name} has {caller_count} existing callers - ensure backward compatibility"
+                                    )
+                        except Exception as e:
+                            logger.debug(f"Graph check failed for {entity_name}: {e}")
+                    
+                    if graph_warnings:
+                        for warning in graph_warnings:
+                            yield f"[GRAPH] {warning}\n"
+                        source_code_context = f"{source_code_context}\n\nGRAPH WARNINGS:\n" + "\n".join(graph_warnings)
+            
+            # Scale candidates based on task complexity
+            request_type = await self._classify_request(current_task_desc)
+            num_candidates = self._get_candidate_count(request_type)
+            if num_candidates != self.num_candidates:
+                yield f"\n[MAKER] Task complexity: {request_type} → Generating {num_candidates} candidates (scaled from default {self.num_candidates})...\n"
+            else:
+                yield f"\n[MAKER] Generating {num_candidates} candidates in parallel...\n"
+            
+            candidates = await self.generate_candidates(current_task_desc, task_desc, num_candidates, task_id, source_code_context)
+            
+            if len(candidates) == 0:
+                yield " No valid candidates generated\n"
+                break
+            
+            yield f"[MAKER] Got {len(candidates)} candidates, voting (first-to-{self.vote_k})...\n"
+            code_output, vote_counts = await self.maker_vote(candidates, current_task_desc, self.vote_k)
+            
+            if code_output is None:
+                yield " Voting failed\n"
+                break
+            
+            yield f"[MAKER] Votes: {vote_counts}\n"
+            yield f"[CODER] Winner output:\n{code_output[:500]}...\n"
+            
+            compressor.add_message("assistant", f"Generated code:\n{code_output[:2000]}")
+            await compressor.compress_if_needed()
+            
+            state.code = code_output
+            state.status = "reviewing"
+            state.context_stats = compressor.get_stats()
+            state.save_to_redis(self.redis)
+            
+            # 4. REVIEW (mode-dependent)
+            review_output = ""
+            
+            if self.maker_mode == "low":
+                yield f"\n[PLANNER REFLECTION] Validating code against plan...\n"
+                review_output = await self._planner_reflection(code_output, current_task_desc, state.plan)
+                yield review_output + "\n"
+            else:
+                reviewer_prompt = self._load_system_prompt("reviewer")
+                review_request = f"""Review this code:
+
+{code_output}
+
+Original task: {current_task_desc}
+
+Run tests and validate code quality.
+"""
+                yield f"\n[REVIEWER] Validating code...\n"
+                async for chunk in self.call_agent(AgentName.REVIEWER, reviewer_prompt, review_request, temperature=0.1):
+                    review_output += chunk
+                    yield chunk
+            
+            compressor.add_message("reviewer", review_output[:1000])
+            await compressor.compress_if_needed()
+            
+            try:
+                state.review_feedback = json.loads(review_output)
+            except json.JSONDecodeError:
+                if "approved" in review_output.lower() or "" in review_output:
+                    state.review_feedback = {"status": "approved"}
+                else:
+                    state.review_feedback = {"status": "failed", "feedback": review_output}
+            
+            state.context_stats = compressor.get_stats()
+            state.save_to_redis(self.redis)
+            
+            # Check if approved
+            if state.review_feedback.get("status") == "approved":
+                yield "\n[VERIFICATION] Running pre-flight checks...\n"
+                from orchestrator.code_verifier import CodeVerifier
+                verifier = CodeVerifier(codebase_root=self.codebase_root)
+                
+                file_path = None
+                if state.plan and "plan" in state.plan and len(state.plan["plan"]) > 0:
+                    task_desc_check = state.plan["plan"][0].get("description", "")
+                    import re
+                    path_match = re.search(r'(\w+\.py)', task_desc_check)
+                    if path_match:
+                        file_path = path_match.group(1)
+                
+                verification_results = verifier.verify_code(
+                    code=code_output,
+                    file_path=file_path,
+                    run_tests=True
+                )
+                
+                if not verification_results['valid']:
+                    yield f"⚠️ Verification failed:\n"
+                    for error in verification_results['errors']:
+                        yield f"  ❌ {error}\n"
+                    yield "\n[CODER] Fixing syntax errors...\n"
+                    state.review_feedback = {
+                        "status": "failed",
+                        "feedback": f"Syntax errors detected: {verification_results['errors']}"
+                    }
+                    state.save_to_redis(self.redis)
+                    continue
+                
+                if verification_results['warnings']:
+                    yield f"⚠️ Verification warnings:\n"
+                    for warning in verification_results['warnings'][:5]:
+                        yield f"  ⚠️ {warning[:150]}\n"
+                    
+                    if any('incomplete' in w.lower() or 'todo' in w.lower() for w in verification_results['warnings']):
+                        yield "\n❌ Code appears incomplete. Requesting revision...\n"
+                        state.review_feedback = {
+                            "status": "failed",
+                            "feedback": "Code verification detected incomplete implementation (TODOs/placeholders found)"
+                        }
+                        state.save_to_redis(self.redis)
+                        continue
+                
+                if verification_results['tests_run']:
+                    if verification_results['tests_passed']:
+                        yield "✅ All tests passed!\n"
+                    else:
+                        yield f"⚠️ Tests failed (code may still work, but tests need fixing)\n"
+                
+                yield "✅ Code verification complete\n"
+                state.status = "complete"
+                state.save_to_redis(self.redis)
+                yield "\n Code approved!\n"
+                break
+            else:
+                yield f"\n Iteration {state.iteration_count}: Feedback to Coder\n"
+        
+        if state.iteration_count >= max_iterations:
+            yield f"\n Max iterations ({max_iterations}) reached.\n"
+            state.status = "failed"
+            state.save_to_redis(self.redis)
+        
+        final_stats = compressor.get_stats()
+        self.save_session(task_id)
+        self.cleanup_context(task_id)
+        
+        yield json.dumps({
+            "task_id": task_id,
+            "status": state.status,
+            "code": state.code,
+            "iterations": state.iteration_count,
+            "review_feedback": state.review_feedback,
+            "context_stats": final_stats
+        }, indent=2)
+    
+    def __del__(self):
+        """Cleanup on orchestrator destruction"""
+        if self.codebase_watcher:
+            try:
+                self.codebase_watcher.stop()
+            except Exception:
+                pass  # Ignore errors during cleanup
 
 # Usage
 async def main():
