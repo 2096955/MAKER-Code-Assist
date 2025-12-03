@@ -1417,6 +1417,22 @@ Be direct. Output working code in a markdown code block. No questions."""
 
         # If asking about codebase generally, provide overview
         if is_codebase_question and not needs_file_access:
+            # Check if user specified a different path
+            import re
+            path_match = re.search(r'/Users/[\w/]+|/[a-zA-Z0-9_/\-\.]+', user_input)
+            if path_match:
+                specified_path = path_match.group(0)
+                current_codebase = self.codebase_root
+                yield f"[ANALYST] ⚠️ Path Limitation Detected\n\n"
+                yield f"You specified: `{specified_path}`\n"
+                yield f"Currently analyzing: `{current_codebase}`\n\n"
+                yield f"**Why this happens:**\n"
+                yield f"The MCP server (codebase access) is containerized and only mounted to the current directory.\n"
+                yield f"To analyze a different codebase, you would need to:\n"
+                yield f"1. Update `docker-compose.yml` to mount `{specified_path}:/codebase`\n"
+                yield f"2. Restart the MCP server: `docker compose restart mcp-server`\n\n"
+                yield f"**For now, I'll analyze the current codebase** (`{current_codebase}`):\n\n"
+
             yield f"[ANALYST] Analyzing codebase...\n\n"
             try:
                 overview_result = await self._query_mcp("analyze_codebase", {})
