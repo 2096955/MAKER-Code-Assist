@@ -337,7 +337,7 @@ class TaskState:
         return TaskState(**json.loads(data))
 
 class Orchestrator:
-    def __init__(self, redis_host=None, redis_port=6379, mcp_url=None, redis_client=None):
+    def __init__(self, redis_host=None, redis_port=6379, mcp_url=None, redis_client=None, config=None):
         """
         Initialize Orchestrator.
         
@@ -346,7 +346,21 @@ class Orchestrator:
             redis_port: Redis port (default: 6379)
             mcp_url: MCP server URL
             redis_client: Optional Redis client (for testing/mocking). If provided, skips connection.
+            config: Optional MakerAppConfig instance (if None, loads from .maker.json or env vars)
         """
+        # Load configuration (optional - falls back to env vars if not provided)
+        if config is None:
+            try:
+                from orchestrator.config_loader import load_config
+                workspace = os.getenv("CODEBASE_ROOT", ".")
+                self.config = load_config(workspace=workspace)
+            except Exception as e:
+                # Config loading failed - use defaults (backward compatible)
+                import warnings
+                warnings.warn(f"Config loading failed ({e}), using environment variables", UserWarning)
+                self.config = None
+        else:
+            self.config = config
         # Redis connection - make it optional for testing
         if redis_client is not None:
             self.redis = redis_client
@@ -387,17 +401,24 @@ class Orchestrator:
             AgentName.VOTER: os.getenv("VOTER_URL", "http://localhost:8004/v1/chat/completions"),
         }
         
-        self.num_candidates = int(os.getenv("MAKER_NUM_CANDIDATES", "5"))
-        self.vote_k = int(os.getenv("MAKER_VOTE_K", "3"))
+        # MAKER voting parameters (from config or env)
+        if self.config:
+            self.num_candidates = self.config.maker.num_candidates
+            self.vote_k = self.config.maker.vote_k
+            self.maker_mode = self.config.maker.maker_mode
+        else:
+            self.num_candidates = int(os.getenv("MAKER_NUM_CANDIDATES", "5"))
+            self.vote_k = int(os.getenv("MAKER_VOTE_K", "3"))
+            self.maker_mode = os.getenv("MAKER_MODE", "high").lower()
         
         # Tool call scaling: Dynamic candidate count based on task complexity (Claude Code pattern)
         self.enable_tool_scaling = os.getenv("ENABLE_TOOL_SCALING", "true").lower() == "true"
-
-        # MAKER mode: "high" (with Reviewer, needs 128GB RAM) or "low" (Planner reflection, works on 40GB RAM)
-        self.maker_mode = os.getenv("MAKER_MODE", "high").lower()
         
         # Codebase root - set early for use in other initializations
-        self.codebase_root = os.getenv("CODEBASE_ROOT", ".")
+        if self.config and self.config.workspace:
+            self.codebase_root = self.config.workspace
+        else:
+            self.codebase_root = os.getenv("CODEBASE_ROOT", ".")
         
         # Tool permissions (Crush pattern) - Week 2 feature, optional
         try:
@@ -417,10 +438,15 @@ class Orchestrator:
         self.system_prompts = {}
         self.prompts_dir = Path(os.getenv("PROMPTS_DIR", "agents"))
         
-        # Context compression settings
-        self.max_context_tokens = int(os.getenv("MAX_CONTEXT_TOKENS", "32000"))
-        self.recent_window_tokens = int(os.getenv("RECENT_WINDOW_TOKENS", "8000"))
-        self.summary_chunk_size = int(os.getenv("SUMMARY_CHUNK_SIZE", "4000"))
+        # Context compression settings (from config or env)
+        if self.config:
+            self.max_context_tokens = self.config.maker.max_context_tokens
+            self.recent_window_tokens = self.config.maker.recent_window_tokens
+            self.summary_chunk_size = int(os.getenv("SUMMARY_CHUNK_SIZE", "4000"))  # Not in config schema yet
+        else:
+            self.max_context_tokens = int(os.getenv("MAX_CONTEXT_TOKENS", "32000"))
+            self.recent_window_tokens = int(os.getenv("RECENT_WINDOW_TOKENS", "8000"))
+            self.summary_chunk_size = int(os.getenv("SUMMARY_CHUNK_SIZE", "4000"))
         
         # Per-task context compressors (keyed by task_id)
         self._context_compressors: Dict[str, ContextCompressor] = {}

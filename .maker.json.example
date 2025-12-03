@@ -1,0 +1,62 @@
+{
+  "workspace": "/path/to/project",
+  "log_level": "info",
+  
+  "maker": {
+    "maker_mode": "high",
+    "num_candidates": 5,
+    "vote_k": 3,
+    "max_context_tokens": 32000,
+    "recent_window_tokens": 8000
+  },
+  
+  "code_analysis": {
+    "index_depth": 3,
+    "exclude_patterns": [
+      "node_modules/**",
+      "dist/**",
+      "build/**",
+      ".venv/**",
+      "venv/**",
+      "**/*.min.js",
+      "**/*.bundle.js"
+    ],
+    "include_patterns": ["**/*"],
+    "max_file_size": 1048576,
+    "scan_timeout": 30000
+  },
+  
+  "terminal": {
+    "theme": "system",
+    "show_progress_indicators": true,
+    "use_colors": true,
+    "code_highlighting": true
+  },
+  
+  "git": {
+    "preferred_remote": "origin",
+    "sign_commits": false,
+    "use_gpg": false,
+    "use_ssh": false
+  },
+  
+  "editor": {
+    "tab_width": 2,
+    "insert_spaces": true,
+    "format_on_save": true
+  },
+  
+  "allowed_tools": [
+    "read_file",
+    "analyze_file",
+    "analyze_codebase",
+    "search_docs",
+    "find_references",
+    "git_diff"
+  ],
+  
+  "blocked_tools": [
+    "run_tests"
+  ]
+}
+

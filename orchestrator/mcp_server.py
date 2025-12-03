@@ -41,6 +41,48 @@ class CodebaseMCPServer:
             'weaviate_data', 'redis_data', 'postgres_data'
         }
         
+        # Language detection mapping
+        self.EXTENSION_TO_LANGUAGE = {
+            'ts': 'TypeScript',
+            'tsx': 'TypeScript (React)',
+            'js': 'JavaScript',
+            'jsx': 'JavaScript (React)',
+            'py': 'Python',
+            'java': 'Java',
+            'c': 'C',
+            'cpp': 'C++',
+            'cc': 'C++',
+            'cxx': 'C++',
+            'cs': 'C#',
+            'go': 'Go',
+            'rs': 'Rust',
+            'php': 'PHP',
+            'rb': 'Ruby',
+            'swift': 'Swift',
+            'kt': 'Kotlin',
+            'scala': 'Scala',
+            'html': 'HTML',
+            'css': 'CSS',
+            'scss': 'SCSS',
+            'less': 'Less',
+            'json': 'JSON',
+            'md': 'Markdown',
+            'yml': 'YAML',
+            'yaml': 'YAML',
+            'xml': 'XML',
+            'sql': 'SQL',
+            'sh': 'Shell',
+            'bash': 'Bash',
+            'zsh': 'Zsh',
+            'bat': 'Batch',
+            'ps1': 'PowerShell',
+            'r': 'R',
+            'm': 'Objective-C',
+            'mm': 'Objective-C++',
+            'vue': 'Vue',
+            'svelte': 'Svelte'
+        }
+        
     def _chunk_python_file(self, file_path: Path, content: str) -> List[Dict[str, Any]]:
         """
         Chunk Python file respecting function/class boundaries (semantic-aware chunking).
@@ -161,19 +203,177 @@ class CodebaseMCPServer:
         except Exception as e:
             return f" Error reading file: {e}"
     
+    def _detect_language(self, file_path: Path) -> str:
+        """Detect programming language from file extension"""
+        ext = file_path.suffix.lstrip('.')
+        return self.EXTENSION_TO_LANGUAGE.get(ext.lower(), 'Other')
+    
+    def _extract_dependencies(self, content: str, file_path: Path) -> List[Dict[str, Any]]:
+        """
+        Extract dependencies (imports/requires) from a file.
+        
+        Returns:
+            List of dependency info dicts: [{name, type, source, import_path, is_external}]
+        """
+        dependencies = []
+        ext = file_path.suffix.lstrip('.').lower()
+        
+        try:
+            # Python imports
+            if ext == 'py':
+                import_regex = re.compile(r'^\s*(?:import\s+(\S+)|from\s+(\S+)\s+import)', re.MULTILINE)
+                for match in import_regex.finditer(content):
+                    import_path = match.group(1) or match.group(2)
+                    if import_path:
+                        module_name = import_path.split('.')[0]
+                        is_external = not import_path.startswith('.') and module_name not in [
+                            'os', 'sys', 're', 'math', 'datetime', 'time', 'random', 'json', 'csv',
+                            'collections', 'itertools', 'functools', 'pathlib', 'shutil', 'glob',
+                            'pickle', 'urllib', 'http', 'logging', 'argparse', 'unittest', 'subprocess',
+                            'threading', 'multiprocessing', 'typing', 'enum', 'io', 'tempfile', 'asyncio',
+                            'httpx', 'fastapi', 'pydantic', 'redis'
+                        ]
+                        dependencies.append({
+                            'name': module_name,
+                            'type': 'import',
+                            'source': str(file_path.relative_to(self.root)),
+                            'import_path': import_path,
+                            'is_external': is_external
+                        })
+            
+            # JavaScript/TypeScript imports
+            elif ext in ('js', 'jsx', 'ts', 'tsx'):
+                # ES module imports
+                es_import_regex = re.compile(r"import\s+(?:[\w\s{},*]*\s+from\s+)?['\"]([^'\"]+)['\"]", re.MULTILINE)
+                for match in es_import_regex.finditer(content):
+                    import_path = match.group(1)
+                    package_name = import_path.split('/')[0].lstrip('@')
+                    is_external = not (import_path.startswith('.') or import_path.startswith('/'))
+                    dependencies.append({
+                        'name': package_name,
+                        'type': 'import',
+                        'source': str(file_path.relative_to(self.root)),
+                        'import_path': import_path,
+                        'is_external': is_external
+                    })
+                
+                # CommonJS requires
+                require_regex = re.compile(r"(?:const|let|var)\s+(?:[\w\s{},*]*)\s*=\s*require\s*\(\s*['\"]([^'\"]+)['\"]\s*\)", re.MULTILINE)
+                for match in require_regex.finditer(content):
+                    import_path = match.group(1)
+                    package_name = import_path.split('/')[0]
+                    is_external = not (import_path.startswith('.') or import_path.startswith('/'))
+                    dependencies.append({
+                        'name': package_name,
+                        'type': 'require',
+                        'source': str(file_path.relative_to(self.root)),
+                        'import_path': import_path,
+                        'is_external': is_external
+                    })
+            
+            # Java imports
+            elif ext == 'java':
+                import_regex = re.compile(r'^\s*import\s+([^;]+);', re.MULTILINE)
+                for match in import_regex.finditer(content):
+                    import_path = match.group(1)
+                    package_name = import_path.split('.')[0]
+                    dependencies.append({
+                        'name': package_name,
+                        'type': 'import',
+                        'source': str(file_path.relative_to(self.root)),
+                        'import_path': import_path,
+                        'is_external': True
+                    })
+            
+            # Ruby requires
+            elif ext == 'rb':
+                require_regex = re.compile(r"^\s*require\s+['\"]([^'\"]+)['\"]", re.MULTILINE)
+                for match in require_regex.finditer(content):
+                    import_path = match.group(1)
+                    dependencies.append({
+                        'name': import_path,
+                        'type': 'require',
+                        'source': str(file_path.relative_to(self.root)),
+                        'import_path': import_path,
+                        'is_external': True
+                    })
+        
+        except Exception as e:
+            # Silently fail dependency extraction
+            pass
+        
+        return dependencies
+    
+    def analyze_file(self, path: str) -> Dict[str, Any]:
+        """
+        Analyze a single file for language, LOC, dependencies, and metrics.
+        
+        Args:
+            path: File path relative to codebase root
+            
+        Returns:
+            File info dict with: {path, extension, language, size, line_count, last_modified, dependencies}
+        """
+        file_path = (self.root / path).resolve()
+        
+        # Security: Ensure path is within codebase
+        if not str(file_path).startswith(str(self.root)):
+            raise ValueError(f"Path traversal attempt: {path}")
+        
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found: {path}")
+        
+        try:
+            # Get file stats
+            stat = file_path.stat()
+            
+            # Read content for analysis
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            
+            # Detect language
+            language = self._detect_language(file_path)
+            
+            # Count lines
+            line_count = content.count('\n') + (1 if content else 0)
+            
+            # Extract dependencies
+            dependencies = self._extract_dependencies(content, file_path)
+            
+            return {
+                'path': path,
+                'extension': file_path.suffix,
+                'language': language,
+                'size': stat.st_size,
+                'line_count': line_count,
+                'last_modified': stat.st_mtime,
+                'dependencies': dependencies
+            }
+        
+        except Exception as e:
+            raise ValueError(f"Error analyzing file {path}: {e}")
+    
     def analyze_codebase(self) -> Dict[str, Any]:
-        """Return structure of codebase (files, folders, key exports)"""
+        """
+        Analyze entire codebase structure with language detection and dependency tracking.
+        
+        Returns:
+            Project structure dict with: {root, total_files, files_by_language, total_lines_of_code, directories, dependencies}
+        """
         MAX_FILES = 500  # Limit to prevent timeout
         MAX_FILE_SIZE = 1_000_000  # 1MB max per file
         
         structure = {
+            "root": str(self.root),
             "total_files": 0,
-            "total_lines": 0,
-            "languages": {},
-            "directories": [],
-            "key_files": [],  # Important files found
+            "total_lines_of_code": 0,
+            "files_by_language": {},
+            "directories": {},
+            "dependencies": [],
             "truncated": False
         }
+        
+        all_dependencies = []
         
         for root, dirs, files in os.walk(self.root):
             # Skip excluded dirs
@@ -181,8 +381,7 @@ class CodebaseMCPServer:
             
             # Record directory
             rel_dir = Path(root).relative_to(self.root)
-            if str(rel_dir) != '.':
-                structure["directories"].append(str(rel_dir))
+            dir_key = str(rel_dir) if str(rel_dir) != '.' else '.'
             
             for file in files:
                 if file.startswith('.'):
@@ -194,7 +393,6 @@ class CodebaseMCPServer:
                     break
                     
                 file_path = Path(root) / file
-                ext = file_path.suffix
                 
                 # Skip large files
                 try:
@@ -203,27 +401,45 @@ class CodebaseMCPServer:
                 except:
                     continue
                 
-                # Count by language
-                structure["languages"][ext] = structure["languages"].get(ext, 0) + 1
+                # Detect language
+                language = self._detect_language(file_path)
+                structure["files_by_language"][language] = structure["files_by_language"].get(language, 0) + 1
                 
-                # Track key files
-                if file in {'README.md', 'package.json', 'requirements.txt', 'docker-compose.yml', 'Dockerfile', 'main.py', 'app.py', 'index.js', 'index.ts'}:
-                    rel_path = file_path.relative_to(self.root)
-                    structure["key_files"].append(str(rel_path))
+                # Track directory structure
+                if dir_key not in structure["directories"]:
+                    structure["directories"][dir_key] = []
+                structure["directories"][dir_key].append(str(file_path.relative_to(self.root)))
                 
-                # Count lines (only for small files)
-                try:
-                    if file_path.stat().st_size < 100_000:  # Only count lines for files < 100KB
-                        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                            lines = len(f.readlines())
-                            structure["total_lines"] += lines
-                except:
-                    pass
+                # Count lines and extract dependencies (only for code files)
+                if language != 'Other':
+                    try:
+                        if file_path.stat().st_size < 100_000:  # Only analyze files < 100KB
+                            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                content = f.read()
+                                line_count = content.count('\n') + (1 if content else 0)
+                                structure["total_lines_of_code"] += line_count
+                                
+                                # Extract dependencies
+                                deps = self._extract_dependencies(content, file_path)
+                                all_dependencies.extend(deps)
+                    except:
+                        pass
                 
                 structure["total_files"] += 1
             
             if structure["truncated"]:
                 break
+        
+        # Deduplicate dependencies
+        seen = set()
+        unique_deps = []
+        for dep in all_dependencies:
+            key = (dep['name'], dep['import_path'], dep['source'])
+            if key not in seen:
+                seen.add(key)
+                unique_deps.append(dep)
+        
+        structure["dependencies"] = unique_deps
         
         return structure
     
@@ -419,6 +635,10 @@ class ReadFileRequest(BaseModel):
     path: str
 
 
+class AnalyzeFileRequest(BaseModel):
+    path: str
+
+
 class SearchDocsRequest(BaseModel):
     query: str
 
@@ -454,8 +674,15 @@ async def list_tools():
             }
         },
         {
+            "name": "analyze_file",
+            "description": "Analyze a single file for language, LOC, dependencies, and metrics",
+            "parameters": {
+                "path": {"type": "string", "description": "File path relative to codebase"}
+            }
+        },
+        {
             "name": "analyze_codebase",
-            "description": "Get codebase structure (files, languages, LOC)",
+            "description": "Get codebase structure (files, languages, LOC, dependencies)",
             "parameters": {}
         },
         {
@@ -539,6 +766,12 @@ async def call_tool(request: ToolRequest):
             if "path" not in request.args:
                 raise HTTPException(status_code=400, detail="Missing 'path' parameter")
             result = mcp_server.read_file(request.args["path"])
+            return {"result": result}
+        
+        elif request.tool == "analyze_file":
+            if "path" not in request.args:
+                raise HTTPException(status_code=400, detail="Missing 'path' parameter")
+            result = mcp_server.analyze_file(request.args["path"])
             return {"result": result}
         
         elif request.tool == "analyze_codebase":
@@ -685,6 +918,16 @@ async def read_file_endpoint(request: ReadFileRequest):
         result = mcp_server.read_file(request.path)
         return {"result": result}
     except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/mcp/analyze_file")
+async def analyze_file_endpoint(request: AnalyzeFileRequest):
+    """Analyze a single file"""
+    try:
+        result = mcp_server.analyze_file(request.path)
+        return {"result": result}
+    except (ValueError, FileNotFoundError) as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
