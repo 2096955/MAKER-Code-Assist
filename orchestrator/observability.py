@@ -161,6 +161,21 @@ def trace_memory_query(query: str, compression_ratio: float):
     span.set_attribute("memory.compression_ratio", compression_ratio)
     return span
 
+from contextlib import contextmanager
+
+@contextmanager
+def trace_graph_query(tool_name: str, symbol: str):
+    """Trace knowledge graph queries for Phoenix observability"""
+    import time
+    tracer = get_tracer()
+    with tracer.start_as_current_span("graph.query") as span:
+        span.set_attribute("graph.tool", tool_name)
+        span.set_attribute("graph.symbol", symbol)
+        span.set_attribute("graph.timestamp", time.time())
+        # Yield span so caller can set additional attributes
+        yield span
+        # Span automatically closes when context exits
+
 # Initialize on import
 if OPENTELEMETRY_AVAILABLE and PHOENIX_ENABLED:
     setup_phoenix_tracing()

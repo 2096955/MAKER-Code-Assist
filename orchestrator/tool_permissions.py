@@ -128,3 +128,4 @@ class ToolPermissions:
             "mode": "whitelist" if config["allowed_tools"] is not None else "blacklist"
         }
 
+

@@ -234,3 +234,4 @@ class HybridSearch:
         # 3. Merge and re-rank
         return self.merge_and_rerank(semantic_results, keyword_results, top_k)
 
+

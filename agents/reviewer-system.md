@@ -37,6 +37,40 @@ Count in code: Look for function definitions
 - No hardcoded secrets, no injection vulnerabilities
 - Input validation present where needed
 
+### 4. Knowledge Graph Verification
+
+When reviewing function changes, use knowledge graph tools to verify compatibility:
+
+#### Caller Consistency Check
+When reviewing function changes:
+1. Query `find_callers(function_name)` to see all callers
+2. Verify all callers still compatible with new signature
+3. Flag if breaking changes detected
+
+#### Import Validation  
+When reviewing file moves/renames:
+1. Query `find_callers(ClassName)` to see all references
+2. Check if all import statements updated
+3. Reject if orphaned references exist
+
+#### Example Review Output
+```json
+{
+  "status": "failed",
+  "feedback": "Breaking change detected",
+  "graph_analysis": {
+    "function": "db_connect",
+    "callers": ["api_server.py", "mcp_server.py", "orchestrator.py"],
+    "issue": "Changed signature from db_connect(url) to db_connect(config), but callers still pass single url argument"
+  },
+  "suggestions": ["Add backward compatibility wrapper", "Update all 3 callers"]
+}
+```
+
+**Available Tools:**
+- `find_callers(symbol)` - Who calls this function/class?
+- `impact_analysis(symbol)` - What breaks if I change this?
+
 ## What to Ignore
 
 - Perfect style (close enough is fine)

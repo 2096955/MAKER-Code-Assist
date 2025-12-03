@@ -18,6 +18,9 @@ import os
 import json
 import subprocess
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 import ast
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
@@ -31,8 +34,9 @@ MAX_FILE_SIZE_FOR_CHUNKING = 5000
 app = FastAPI(title="MCP Codebase Server", version="1.0.0")
 
 class CodebaseMCPServer:
-    def __init__(self, codebase_root: str):
+    def __init__(self, codebase_root: str, redis_client=None):
         self.root = Path(codebase_root).resolve()
+        self.redis_client = redis_client  # For loading code graph
         self.excluded = {
             '.git', 'node_modules', 'dist', 'build', '__pycache__', '.specify', '.claude',
             'models', '.venv', 'venv', 'env', '.env', 'vendor', 'target', 
@@ -618,11 +622,91 @@ class CodebaseMCPServer:
             return " Tests timed out (>30s)"
         except Exception as e:
             return f" Test error: {e}"
+    
+    def find_callers(self, symbol: str, use_communities: bool = True) -> List[str]:
+        """
+        Find all callers of a function/class using code graph.
+        
+        Args:
+            symbol: Function or class name to find callers for
+            use_communities: If True, use community-aware fast search (default: True)
+        
+        Returns:
+            List of formatted caller strings (file_path::name)
+        """
+        if not self.redis_client:
+            return []
+        
+        try:
+            from orchestrator.code_graph import CodeGraph
+            graph = CodeGraph.load_from_redis(self.redis_client)
+            if not graph:
+                return []
+            
+            # Use fast community-aware search if available, otherwise fallback to regular
+            if use_communities and graph.community_built:
+                callers = graph.find_callers_fast(symbol)
+            else:
+                callers = graph.find_callers(symbol)
+            
+            # Format results with node info
+            formatted = []
+            for caller_id in callers:
+                node_info = graph.get_node_info(caller_id)
+                if node_info:
+                    file_path = node_info.get('file', 'unknown')
+                    name = node_info.get('name', caller_id)
+                    formatted.append(f"{file_path}::{name}")
+                else:
+                    formatted.append(caller_id)
+            return formatted
+        except Exception as e:
+            logger.warning(f"Error finding callers for {symbol}: {e}")
+            return []
+    
+    def impact_analysis(self, symbol: str) -> List[str]:
+        """Analyze impact of changing a function/class (all downstream dependencies)"""
+        if not self.redis_client:
+            return []
+        
+        try:
+            from orchestrator.code_graph import CodeGraph
+            graph = CodeGraph.load_from_redis(self.redis_client)
+            if not graph:
+                return []
+            impacts = graph.impact_analysis(symbol)
+            # Format results
+            formatted = []
+            for impact_id in impacts:
+                node_info = graph.get_node_info(impact_id)
+                if node_info:
+                    file_path = node_info.get('file', 'unknown')
+                    name = node_info.get('name', impact_id)
+                    formatted.append(f"{file_path}::{name}")
+                else:
+                    formatted.append(impact_id)
+            return formatted
+        except Exception as e:
+            logger.warning(f"Error analyzing impact for {symbol}: {e}")
+            return []
 
 
 # Initialize MCP server
 codebase_root = os.getenv('CODEBASE_ROOT', os.getcwd())
-mcp_server = CodebaseMCPServer(codebase_root)
+
+# Get Redis client for code graph (optional)
+_redis_client = None
+try:
+    import redis
+    redis_host = os.getenv("REDIS_HOST", "localhost")
+    redis_port = int(os.getenv("REDIS_PORT", "6379"))
+    _redis_client = redis.Redis(host=redis_host, port=redis_port, decode_responses=True, socket_connect_timeout=2)
+    _redis_client.ping()  # Test connection
+except (ImportError, redis.ConnectionError, redis.TimeoutError, Exception):
+    # Redis not available - graph features will be disabled
+    _redis_client = None
+
+mcp_server = CodebaseMCPServer(codebase_root, redis_client=_redis_client)
 
 
 # Request models
@@ -697,6 +781,20 @@ async def list_tools():
             "description": "Find all references to a symbol (function/class/var)",
             "parameters": {
                 "symbol": {"type": "string"}
+            }
+        },
+        {
+            "name": "find_callers",
+            "description": "Find all functions/classes that call a given symbol (uses knowledge graph)",
+            "parameters": {
+                "symbol": {"type": "string", "description": "Function or class name to find callers for"}
+            }
+        },
+        {
+            "name": "impact_analysis",
+            "description": "Analyze what would break if a function/class is changed (all downstream dependencies)",
+            "parameters": {
+                "symbol": {"type": "string", "description": "Function or class name to analyze"}
             }
         },
         {
@@ -789,6 +887,23 @@ async def call_tool(request: ToolRequest):
                 raise HTTPException(status_code=400, detail="Missing 'symbol' parameter")
             result = mcp_server.find_references(request.args["symbol"])
             return {"result": result}
+        
+        elif request.tool == "find_callers":
+            if "symbol" not in request.args:
+                raise HTTPException(status_code=400, detail="Missing 'symbol' parameter")
+            # Load graph from Redis
+            callers = mcp_server.find_callers(request.args["symbol"])
+            if not callers:
+                return {"result": [], "error": "Code graph not available. Run codebase indexing first."}
+            return {"result": callers}
+        
+        elif request.tool == "impact_analysis":
+            if "symbol" not in request.args:
+                raise HTTPException(status_code=400, detail="Missing 'symbol' parameter")
+            impacts = mcp_server.impact_analysis(request.args["symbol"])
+            if not impacts:
+                return {"result": [], "error": "Code graph not available. Run codebase indexing first."}
+            return {"result": impacts}
         
         elif request.tool == "git_diff":
             result = mcp_server.git_diff(request.args.get("file"))

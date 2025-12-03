@@ -22,6 +22,84 @@ from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 import threading
 from collections import OrderedDict
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class CallExtractor(ast.NodeVisitor):
+    """Extract function calls and imports from AST for code graph"""
+    def __init__(self, file_path: str, code_graph):
+        self.file_path = file_path
+        self.graph = code_graph
+        self.current_function = None
+        self.imports = {}  # Map imported names to modules
+        
+    def visit_Import(self, node):
+        """Track imports: import httpx"""
+        for alias in node.names:
+            module_name = alias.name
+            imported_name = alias.asname or alias.name.split('.')[0]
+            self.imports[imported_name] = module_name
+            self.graph.add_import(self.file_path, module_name, 'import')
+        self.generic_visit(node)
+    
+    def visit_ImportFrom(self, node):
+        """Track imports: from httpx import AsyncClient"""
+        module_name = node.module or ''
+        for alias in node.names:
+            imported_name = alias.asname or alias.name
+            self.imports[imported_name] = module_name
+            self.graph.add_import(self.file_path, module_name, 'from_import')
+        self.generic_visit(node)
+    
+    def visit_FunctionDef(self, node):
+        """Track function definition and enter scope"""
+        old_function = self.current_function
+        func_id = f"{self.file_path}::{node.name}"
+        self.current_function = func_id
+        self.generic_visit(node)
+        self.current_function = old_function
+    
+    def visit_ClassDef(self, node):
+        """Track class definition"""
+        self.generic_visit(node)
+    
+    def visit_Call(self, node):
+        """Extract function calls: func() or obj.method()"""
+        if not self.current_function:
+            return
+        
+        # Get caller name (already qualified from visit_FunctionDef)
+        caller_name = self.current_function.split('::')[-1]  # Just the function name
+        
+        # Handle direct calls: func()
+        if isinstance(node.func, ast.Name):
+            callee = node.func.id
+            # Check if it's an imported function
+            if callee in self.imports:
+                callee = self.imports[callee]
+            # Pass qualified caller ID (current_function is already qualified)
+            self.graph.add_call(caller_name, callee, self.file_path)
+        
+        # Handle method calls: obj.method()
+        elif isinstance(node.func, ast.Attribute):
+            # Extract method name
+            method_name = node.func.attr
+            # Try to resolve object name
+            if isinstance(node.func.value, ast.Name):
+                obj_name = node.func.value.id
+                # Check if it's an imported class/module
+                if obj_name in self.imports:
+                    callee = f"{self.imports[obj_name]}.{method_name}"
+                else:
+                    callee = f"{obj_name}.{method_name}"
+            else:
+                callee = method_name
+            # Pass qualified caller ID
+            self.graph.add_call(caller_name, callee, self.file_path)
+        
+        self.generic_visit(node)
 
 
 class MemoryLevel(Enum):
@@ -111,10 +189,12 @@ class HierarchicalMemoryNetwork:
     def __init__(self, 
                  codebase_path: str,
                  compression_ratios: List[float] = [0.3, 0.2, 0.15],
-                 preservation_thresholds: List[float] = [0.85, 0.75, 0.70]):
+                 preservation_thresholds: List[float] = [0.85, 0.75, 0.70],
+                 redis_client=None):
         self.codebase_path = Path(codebase_path).resolve()
         self.compression_ratios = compression_ratios
         self.preservation_thresholds = preservation_thresholds
+        self.redis_client = redis_client
         
         # Level storage
         self.l0_nodes: Dict[str, MemoryNode] = {}  # Raw files
@@ -138,6 +218,14 @@ class HierarchicalMemoryNetwork:
         
         # LRU cache for file access tracking
         self._lru_cache: OrderedDict[str, float] = OrderedDict()
+        
+        # Code graph for semantic relationships
+        try:
+            from orchestrator.code_graph import CodeGraph
+            self.code_graph: Optional[CodeGraph] = CodeGraph()
+        except ImportError:
+            logger.warning("CodeGraph not available, graph features disabled")
+            self.code_graph: Optional[CodeGraph] = None
     
     def _update_lru_cache(self, node_id: str):
         """Update LRU cache for node access tracking"""
@@ -169,7 +257,7 @@ class HierarchicalMemoryNetwork:
         return node_id
     
     def extract_entities(self, l0_node_id: str) -> List[str]:
-        """Extract L₁ entities (functions, classes) from L₀ code"""
+        """Extract L₁ entities (functions, classes) from L₀ code and populate code graph"""
         if l0_node_id not in self.l0_nodes:
             return []
         
@@ -181,6 +269,13 @@ class HierarchicalMemoryNetwork:
         entities = []
         try:
             tree = ast.parse(content, filename=file_path)
+            
+            # Extract entities and populate code graph
+            if self.code_graph:
+                # Use CallExtractor visitor to extract calls and imports
+                extractor = CallExtractor(file_path, self.code_graph)
+                extractor.visit(tree)
+            
             for item in ast.walk(tree):
                 if isinstance(item, ast.FunctionDef):
                     entity_id = f"l1_func_{item.name}_{l0_node_id}"
@@ -201,6 +296,10 @@ class HierarchicalMemoryNetwork:
                     entities.append(entity_id)
                     self.entity_to_l1[f"{file_path}::{item.name}"] = entity_id
                     
+                    # Add to code graph
+                    if self.code_graph:
+                        self.code_graph.add_function(item.name, file_path, item.lineno)
+                    
                 elif isinstance(item, ast.ClassDef):
                     entity_id = f"l1_class_{item.name}_{l0_node_id}"
                     entity_node = MemoryNode(
@@ -219,8 +318,13 @@ class HierarchicalMemoryNetwork:
                     node.child_ids.append(entity_id)
                     entities.append(entity_id)
                     self.entity_to_l1[f"{file_path}::{item.name}"] = entity_id
-        except SyntaxError:
+                    
+                    # Add to code graph
+                    if self.code_graph:
+                        self.code_graph.add_class(item.name, file_path, item.lineno)
+        except SyntaxError as e:
             # Not Python or invalid syntax - use regex fallback
+            logger.warning(f"AST parse error for {file_path}: {e}. Using regex fallback.")
             # Extract function-like patterns
             func_pattern = r'def\s+(\w+)\s*\([^)]*\):'
             for match in re.finditer(func_pattern, content):
@@ -240,6 +344,24 @@ class HierarchicalMemoryNetwork:
                     self.l1_nodes[entity_id] = entity_node
                     node.child_ids.append(entity_id)
                     entities.append(entity_id)
+        except Exception as e:
+            logger.warning(f"Error extracting entities from {file_path}: {e}")
+        
+        # Build communities and persist code graph after extraction
+        if self.code_graph:
+            # Build communities for faster queries (if graph is large enough)
+            if self.code_graph.graph.number_of_nodes() >= 10:
+                try:
+                    self.code_graph.build_communities()
+                except Exception as e:
+                    logger.debug(f"Community detection failed (non-critical): {e}")
+            
+            # Persist to Redis
+            if self.redis_client:
+                try:
+                    self.code_graph.persist_to_redis(self.redis_client)
+                except Exception as e:
+                    logger.warning(f"Failed to persist code graph: {e}")
         
         self.stats["l1_count"] = len(self.l1_nodes)
         return entities
