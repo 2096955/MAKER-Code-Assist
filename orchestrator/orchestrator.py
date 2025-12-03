@@ -1410,7 +1410,43 @@ Be direct. Output working code in a markdown code block. No questions."""
 
         # Detect if this is a codebase-specific question requiring file access
         file_access_keywords = ["show me", "translate", "convert", "write into", "rewrite", "port to"]
+        codebase_question_keywords = ["codebase", "this code", "this project", "this repo", "files", "structure", "architecture"]
+
         needs_file_access = any(kw in lower_input for kw in file_access_keywords)
+        is_codebase_question = any(kw in lower_input for kw in codebase_question_keywords)
+
+        # If asking about codebase generally, provide overview
+        if is_codebase_question and not needs_file_access:
+            yield f"[ANALYST] Analyzing codebase...\n\n"
+            try:
+                overview_result = await self._query_mcp("analyze_codebase", {})
+                if isinstance(overview_result, dict):
+                    yield f"**Codebase Overview:**\n"
+                    yield f"- Total files: {overview_result.get('total_files', 'N/A')}\n"
+                    yield f"- Total lines: {overview_result.get('total_lines', 'N/A'):,}\n"
+                    yield f"- Languages: {', '.join(k for k in overview_result.get('languages', {}).keys() if k.startswith('.'))}\n"
+                    yield f"- Main directories: {', '.join(overview_result.get('directories', [])[:10])}\n\n"
+
+                    # Read README for context
+                    readme_result = await self._query_mcp("read_file", {"path": "README.md"})
+                    if readme_result and not readme_result.startswith(" File not found"):
+                        yield f"**README.md:**\n```\n{readme_result[:2000]}\n```\n\n"
+
+                    yield f"This is a **MAKER (Multi-Agent Knowledge-Enhanced Reasoning)** system:\n"
+                    yield f"- 5 AI agents orchestrated for local code generation on Apple Silicon\n"
+                    yield f"- Parallel candidate generation with first-to-K voting\n"
+                    yield f"- Kùzu melodic line memory for coherent reasoning across agents\n"
+                    yield f"- MCP-based codebase access and tools\n"
+                    yield f"- Community detection for fast graph queries\n\n"
+
+                    yield f"Ask more specific questions like:\n"
+                    yield f"- \"Show me the orchestrator workflow\"\n"
+                    yield f"- \"How does MAKER voting work?\"\n"
+                    yield f"- \"Explain the melodic line memory\"\n"
+                return
+            except Exception as e:
+                yield f"Error analyzing codebase: {e}\n"
+                return
 
         if needs_file_access:
             # Actually read key codebase files via MCP and show them to the user
