@@ -35,6 +35,10 @@ Complete documentation for the MAKER (Multi-Agent Knowledge-Enhanced Reasoning) 
 - **[rag-limitations.md](rag-limitations.md)** - Known RAG limitations
 
 ### Advanced Features
+- **[INTELLIGENT_CODEBASE_ANALYSIS.md](INTELLIGENT_CODEBASE_ANALYSIS.md)** - Smart codebase analysis with Redis memory and AI-powered README extraction
+- **[AGENT_INTELLIGENCE.md](AGENT_INTELLIGENCE.md)** - Agent self-awareness, proactive context building, and intelligent delegation
+- **[COLLECTIVE_BRAIN.md](COLLECTIVE_BRAIN.md)** - Multi-agent consensus for complex decisions
+- **[COMMUNITY_DETECTION_IMPLEMENTATION.md](COMMUNITY_DETECTION_IMPLEMENTATION.md)** - NetworkX community detection for faster graph queries
 - **[swe-bench-integration.md](swe-bench-integration.md)** - SWE-bench evaluation integration
 - **[reviewer-optional-plan.md](reviewer-optional-plan.md)** - How Low mode works without Reviewer
 - **[context-engineering-skills-analysis.md](context-engineering-skills-analysis.md)** - Context engineering patterns

@@ -17,6 +17,11 @@ This project is built using open-source models and tools. See [CONTRIBUTORS.md](
 - **Dual Orchestrator Architecture**: High mode (port 8080) and Low mode (port 8081) run simultaneously for instant switching
 - **llama.cpp Metal Backend**: 2-3x faster than vLLM on Apple Silicon (18-25s end-to-end)
 - **Agentic RAG via MCP**: Live codebase queries via REST API (no embeddings, no reindexing)
+- **Intelligent Codebase Analysis**: Redis memory + AI-powered README extraction (Gemma2-2B) for smart codebase understanding
+- **Agent Self-Awareness**: Agents know their strengths and delegate intelligently
+- **Collective Brain**: Multi-agent consensus for complex questions (Planner + Coder + Reviewer)
+- **Code Graph**: NetworkX semantic graph with community detection (5-10x faster queries)
+- **Melodic Line Memory**: Kùzu graph database for coherent reasoning across agents
 - **Parallel Execution**: All agents run simultaneously with Redis state coordination
 - **Context Compression**: Hierarchical compression with sliding window (recent messages in full, older messages summarized)
 - **OpenAI-Compatible API**: Works with Continue.dev, Open WebUI, or any OpenAI client
