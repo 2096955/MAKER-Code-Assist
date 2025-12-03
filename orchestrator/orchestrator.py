@@ -1447,18 +1447,6 @@ Be direct. Output working code in a markdown code block. No questions."""
                     readme_result = await self._query_mcp("read_file", {"path": "README.md"})
                     if readme_result and not readme_result.startswith(" File not found"):
                         yield f"**README.md:**\n```\n{readme_result[:2000]}\n```\n\n"
-
-                    yield f"This is a **MAKER (Multi-Agent Knowledge-Enhanced Reasoning)** system:\n"
-                    yield f"- 5 AI agents orchestrated for local code generation on Apple Silicon\n"
-                    yield f"- Parallel candidate generation with first-to-K voting\n"
-                    yield f"- Kùzu melodic line memory for coherent reasoning across agents\n"
-                    yield f"- MCP-based codebase access and tools\n"
-                    yield f"- Community detection for fast graph queries\n\n"
-
-                    yield f"Ask more specific questions like:\n"
-                    yield f"- \"Show me the orchestrator workflow\"\n"
-                    yield f"- \"How does MAKER voting work?\"\n"
-                    yield f"- \"Explain the melodic line memory\"\n"
                 return
             except Exception as e:
                 yield f"Error analyzing codebase: {e}\n"
