@@ -1498,22 +1498,25 @@ Be direct. Output working code in a markdown code block. No questions."""
                             except:
                                 pass
 
-                    # Extract first substantive paragraph from README
+                    # Use Gemma2-2B (Preprocessor) to intelligently extract description from README
                     description_text = ""
                     if readme_content:
-                        lines = readme_content.split('\n')
-                        description = []
-                        for line in lines:
-                            line = line.strip()
-                            # Skip headers, badges, images
-                            if line and not line.startswith('#') and not line.startswith('!') and not line.startswith('[') and not line.startswith('```'):
-                                description.append(line)
-                                if len(' '.join(description)) > 200:
-                                    break
+                        summary_prompt = "Extract the main purpose/description of this codebase in 1-2 sentences. Ignore badges, images, and formatting. Focus on WHAT this project does."
+                        summary_request = f"README content:\n{readme_content[:3000]}\n\nSummarize what this codebase does:"
 
-                        if description:
-                            description_text = ' '.join(description)[:300]
-                            yield f"{description_text}\n\n"
+                        try:
+                            description_text = await self.call_agent_sync(
+                                AgentName.PREPROCESSOR,
+                                summary_prompt,
+                                summary_request,
+                                temperature=0.3
+                            )
+                            # Clean up response
+                            description_text = description_text.strip()[:300]
+                            if description_text and not description_text.startswith("Error:"):
+                                yield f"{description_text}\n\n"
+                        except:
+                            pass  # Fall back to showing just metrics
 
                     yield f"**Files:** {total_files}\n"
                     yield f"**Lines:** {total_lines:,}\n"
