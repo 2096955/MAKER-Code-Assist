@@ -1,4 +1,6 @@
-# Phoenix Observability & Evaluation Dashboard
+# Phoenix Observability & Tracing
+
+> **For A/B Testing & Evaluations**: See [PHOENIX_EVALUATIONS.md](PHOENIX_EVALUATIONS.md) for quantitative validation of system improvements. & Evaluation Dashboard
 
 Arize Phoenix provides comprehensive observability and evaluation capabilities for the MAKER multi-agent system. All agent interactions, workflow steps, and performance metrics are automatically traced and sent to Phoenix.
 

@@ -1,453 +1,402 @@
-# Phoenix Evaluations for MAKER Multi-Agent System
-
-Complete guide to evaluating collective brain, melodic line memory, and code generation quality using Arize Phoenix.
+# Phoenix Evaluations: A/B Testing & Validation
 
 ## Overview
 
-Phoenix Evaluations provides:
-- **LLM-as-Judge evaluations** (hallucination, Q&A correctness, relevance)
-- **Code execution validation** (via Playwright)
-- **A/B testing framework** (compare configurations)
-- **Visual analysis** in Phoenix UI at `http://localhost:6006`
+The Phoenix Evaluations framework provides quantitative, data-driven validation of MAKER system improvements through A/B testing and automated evaluation.
+
+## Features
+
+### 1. Melodic Memory A/B Testing
+
+**Purpose**: Validate that melodic line memory improves coherent reasoning across agents.
+
+**Experiment**: `melodic_memory_ab`
+
+**What It Tests**:
+- **Control**: Agents WITHOUT melodic line memory (standard workflow)
+- **Treatment**: Agents WITH melodic line memory (Kùzu graph database)
+
+**Metrics Measured**:
+- **QA Correctness**: Answer accuracy vs reference answers
+- **Hallucination Reduction**: Unsupported claims detected
+- **Relevance Improvement**: Response on-topic percentage
+
+**Usage**:
+```bash
+python tests/phoenix_evaluator.py --experiment melodic_memory_ab
+```
+
+**Expected Results**:
+- Treatment group should show higher QA correctness
+- Lower hallucination rate
+- Better relevance scores
+
+### 2. Collective Brain A/B Testing
+
+**Purpose**: Validate that multi-agent consensus provides better answers than single-agent responses.
+
+**Experiment**: `collective_brain_ab`
+
+**What It Tests**:
+- **Control**: Single-agent answers (Preprocessor only)
+- **Treatment**: Multi-agent consensus (Planner + Coder + Reviewer)
+
+**Metrics Measured**:
+- **Answer Quality**: Comprehensive vs surface-level answers
+- **Coverage of Trade-offs**: Multiple perspectives considered
+- **Consensus Confidence**: Agreement between agents
+
+**Usage**:
+```bash
+python tests/phoenix_evaluator.py --experiment collective_brain_ab
+```
+
+**Expected Results**:
+- Treatment group should show higher answer quality
+- Better coverage of trade-offs and edge cases
+- Higher consensus confidence scores
+
+### 3. SWE-bench Evaluation
+
+**Purpose**: Test code generation on real GitHub issues with execution validation.
+
+**Experiment**: `swe_bench`
+
+**What It Tests**:
+- Code generation for real GitHub issues
+- Generated code execution with Playwright
+- Test assertion validation
+
+**Metrics Measured**:
+- **Patch Correctness**: Generated code matches expected solution
+- **Test Pass Rate**: Generated code passes test suite
+- **Execution Errors**: Syntax errors, runtime errors, logic bugs
+
+**Usage**:
+```bash
+# Run on 10 instances
+python tests/phoenix_evaluator.py --experiment swe_bench --num_instances 10
+
+# Run on all instances
+python tests/phoenix_evaluator.py --experiment swe_bench
+```
+
+**Expected Results**:
+- High patch correctness rate
+- Test pass rate > 50% (baseline for SWE-bench)
+- Low execution error rate
+
+## LLM-as-Judge Evaluators
+
+### HallucinationEvaluator
+
+**Purpose**: Detects unsupported claims in agent responses.
+
+**How It Works**:
+- Uses LLM to check if claims are supported by context
+- Flags assertions without evidence
+- Measures hallucination rate
+
+**Example**:
+```python
+evaluator = HallucinationEvaluator()
+result = evaluator.evaluate(
+    response="The system uses Redis for caching",
+    context="Codebase uses Redis for session storage"
+)
+# Result: Hallucination detected (context says session, not caching)
+```
+
+### QAEvaluator
+
+**Purpose**: Measures answer correctness vs reference answers.
+
+**How It Works**:
+- Compares agent response to ground truth
+- Uses LLM to assess correctness
+- Measures QA accuracy percentage
+
+**Example**:
+```python
+evaluator = QAEvaluator()
+result = evaluator.evaluate(
+    response="The system uses Redis",
+    reference="The system uses Redis for session storage"
+)
+# Result: Partially correct (missing detail about session storage)
+```
+
+### RelevanceEvaluator
+
+**Purpose**: Checks if response is on-topic and relevant.
+
+**How It Works**:
+- Uses LLM to assess relevance to question
+- Measures on-topic percentage
+- Flags off-topic responses
+
+**Example**:
+```python
+evaluator = RelevanceEvaluator()
+result = evaluator.evaluate(
+    question="How does authentication work?",
+    response="The system uses JWT tokens for authentication"
+)
+# Result: Highly relevant
+```
+
+## Code Execution Validation
+
+### Playwright-Based Execution
+
+**Purpose**: Safely execute generated code and validate test assertions.
+
+**How It Works**:
+1. Generate code from agent response
+2. Run test assertions in isolated subprocess
+3. Catch syntax errors, runtime errors, logic bugs
+4. Report execution results
+
+**Safety Features**:
+- Isolated subprocess execution
+- Timeout protection
+- Error capture and reporting
+
+**Example**:
+```python
+# Generated code
+code = """
+def test_authentication():
+    assert authenticate("user", "pass") == True
+"""
+
+# Execute with Playwright
+result = execute_code(code)
+# Result: Test passed / Test failed / Syntax error / Runtime error
+```
+
+## Visual Analysis
+
+### Phoenix UI Dashboard
+
+**Access**: http://localhost:6006
+
+**Features**:
+- Side-by-side control vs treatment comparison
+- Drill into failures to identify patterns
+- Filter by experiment, metric, date
+- Export results to CSV
+
+**Navigation**:
+1. Open http://localhost:6006 in browser
+2. Click on experiment projects (e.g., "melodic_memory_ab")
+3. Compare metrics between control and treatment
+4. Click on individual traces to see details
+
+### Metrics Visualization
+
+**Available Metrics**:
+- QA Correctness: Percentage of correct answers
+- Hallucination Rate: Percentage of unsupported claims
+- Relevance Score: On-topic percentage
+- Consensus Confidence: Agent agreement level
+- Test Pass Rate: SWE-bench test success rate
+
+**Charts**:
+- Bar charts: Control vs Treatment comparison
+- Line charts: Metrics over time
+- Scatter plots: Correlation analysis
+
+## Data Export
+
+### CSV Export
+
+**Location**: `results/phoenix_evals/*.csv`
+
+**Format**: Timestamped files for tracking experiments over time
+
+**Columns**:
+- `experiment`: Experiment name
+- `run_id`: Unique run identifier
+- `timestamp`: When experiment ran
+- `metric`: Metric name (qa_correctness, hallucination_rate, etc.)
+- `control_value`: Control group value
+- `treatment_value`: Treatment group value
+- `improvement`: Percentage improvement
+
+**Example**:
+```csv
+experiment,run_id,timestamp,metric,control_value,treatment_value,improvement
+melodic_memory_ab,run_001,2025-01-15T10:00:00,qa_correctness,0.65,0.78,20.0
+melodic_memory_ab,run_001,2025-01-15T10:00:00,hallucination_rate,0.15,0.08,-46.7
+```
 
 ## Setup
 
-### 1. Install Dependencies
+### Prerequisites
 
 ```bash
-# Install Phoenix Evaluations SDK and Playwright
+# Install dependencies
 pip install -r requirements.txt
 
-# Install Playwright browsers
+# Install Playwright browser
 playwright install chromium
 ```
 
-### 2. Verify Phoenix is Running
+### Verify Phoenix is Running
 
 ```bash
-# Check Phoenix UI is accessible
+# Check Phoenix health
 curl http://localhost:6006/health
 
-# Or visit in browser
-open http://localhost:6006
+# Or start Phoenix if not running
+docker compose up -d phoenix
 ```
 
 ## Running Evaluations
 
-### Melodic Memory A/B Test
-
-Compare agent performance with melodic line memory ON vs OFF:
+### Basic Usage
 
 ```bash
+# Run melodic memory A/B test
 python tests/phoenix_evaluator.py --experiment melodic_memory_ab
+
+# Run collective brain A/B test
+python tests/phoenix_evaluator.py --experiment collective_brain_ab
+
+# Run SWE-bench evaluation (10 instances)
+python tests/phoenix_evaluator.py --experiment swe_bench --num_instances 10
 ```
 
-**What it tests:**
-- Control group: Agents without shared reasoning chain (melodic_memory=False)
-- Treatment group: Agents with Kùzu melodic line memory (melodic_memory=True)
+### Advanced Options
 
-**Metrics:**
-- QA Correctness Lift: How much better are answers with melodic memory?
-- Hallucination Reduction: Does melodic memory reduce hallucinations?
-- Relevance: Are answers more on-topic with context awareness?
+```bash
+# Custom number of instances
+python tests/phoenix_evaluator.py --experiment swe_bench --num_instances 50
 
-**Expected results:**
-- ✅ Higher QA correctness (agents maintain intent across workflow)
-- ✅ Lower hallucination (grounded in previous agent reasoning)
-- ✅ Better relevance (coherent reasoning chain)
+# Custom output directory
+python tests/phoenix_evaluator.py --experiment melodic_memory_ab --output results/custom/
 
----
+# Verbose logging
+python tests/phoenix_evaluator.py --experiment collective_brain_ab --verbose
+```
+
+## Interpreting Results
+
+### Melodic Memory A/B Test
+
+**Key Metrics**:
+- **QA Correctness Lift**: Should be positive (treatment > control)
+- **Hallucination Reduction**: Should be negative (treatment < control)
+- **Relevance Improvement**: Should be positive (treatment > control)
+
+**Good Results**:
+- QA correctness: +10-20% improvement
+- Hallucination rate: -30-50% reduction
+- Relevance: +5-15% improvement
 
 ### Collective Brain A/B Test
 
-Compare multi-agent consensus vs single-agent answers:
+**Key Metrics**:
+- **Answer Quality**: Treatment should be higher
+- **Coverage of Trade-offs**: Treatment should consider more perspectives
+- **Consensus Confidence**: Should be > 0.7 for good consensus
 
-```bash
-python tests/phoenix_evaluator.py --experiment collective_brain_ab
-```
-
-**What it tests:**
-- Control group: Single agent (Preprocessor) answers complex questions
-- Treatment group: Collective brain consults multiple agents (Preprocessor + Planner + Coder + Reviewer)
-
-**Metrics:**
-- QA Correctness Lift: Do multiple perspectives improve answers?
-- Relevance Lift: Are answers more comprehensive?
-- Consensus Confidence: How much do agents agree?
-
-**Expected results:**
-- ✅ Higher correctness for architectural/design questions
-- ✅ Better coverage of trade-offs and considerations
-- ✅ Dissenting opinions surface edge cases
-
----
+**Good Results**:
+- Answer quality: +15-25% improvement
+- Trade-off coverage: +20-30% improvement
+- Consensus confidence: > 0.7
 
 ### SWE-bench Evaluation
 
-Evaluate on real GitHub issue fixes from SWE-bench Lite:
+**Key Metrics**:
+- **Patch Correctness**: Should be > 0.5 (50% baseline)
+- **Test Pass Rate**: Should be > 0.4 (40% baseline)
+- **Execution Errors**: Should be < 0.1 (10% error rate)
 
-```bash
-# Run on 10 instances (quick test)
-python tests/phoenix_evaluator.py --experiment swe_bench --num_instances 10
-
-# Run on 50 instances (thorough test)
-python tests/phoenix_evaluator.py --experiment swe_bench --num_instances 50
-
-# Full SWE-bench Lite (300 instances - takes hours)
-python tests/phoenix_evaluator.py --experiment swe_bench --num_instances 300
-```
-
-**What it tests:**
-- Real GitHub issues from popular Python repos
-- Gold patches as reference answers
-- Code execution validation (does generated code work?)
-
-**Metrics:**
-- QA Correctness: How close is generated patch to gold patch?
-- Code Pass Rate: Does code execute without errors?
-- Test Coverage: Do generated tests pass?
-- Hallucination: Does code reference non-existent APIs?
-
----
-
-## Analyzing Results in Phoenix UI
-
-### 1. View Experiments
-
-Navigate to `http://localhost:6006` and you'll see:
-
-- **Projects**: Each experiment creates a Phoenix project
-  - `melodic_memory_control`
-  - `melodic_memory_treatment`
-  - `collective_brain_control`
-  - `collective_brain_treatment`
-  - `swe_bench_10`, `swe_bench_50`, etc.
-
-### 2. Compare Metrics
-
-Click on a project to see:
-
-- **Traces**: Full agent execution traces with timing
-- **Evaluations**: LLM-as-judge scores for each instance
-- **Distributions**: Score distributions across instances
-- **Comparisons**: Side-by-side control vs treatment
-
-### 3. Drill into Failures
-
-Filter by low scores to see:
-- Which questions failed?
-- What did the agent respond?
-- Why did Phoenix evaluator mark it wrong?
-- What was the execution error?
-
-### 4. Export Data
-
-Download CSV results from:
-- `results/phoenix_evals/melodic_memory_control_*.csv`
-- `results/phoenix_evals/melodic_memory_treatment_*.csv`
-- etc.
-
----
-
-## Understanding Phoenix Evaluators
-
-### HallucinationEvaluator
-
-**What it checks:** Does the output contain information NOT present in the context?
-
-Example:
-```python
-Context: "User wants JWT auth"
-Output: "Implement JWT auth with OAuth2 and SAML"
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ (HALLUCINATION - SAML not mentioned)
-Score: 0.7 (high hallucination)
-```
-
-**Why it matters:** Melodic memory should ground agents in actual context, reducing hallucinations.
-
----
-
-### QAEvaluator
-
-**What it checks:** Is the output a correct answer to the question given the reference?
-
-Example:
-```python
-Question: "How to fix this bug?"
-Reference: "Change line 42: x = 5 to x = 10"
-Output: "Change x to 10 on line 42"
-Score: 0.95 (very correct)
-```
-
-**Why it matters:** Collective brain should synthesize better answers than single agents.
-
----
-
-### RelevanceEvaluator
-
-**What it checks:** Is the output relevant to the input question?
-
-Example:
-```python
-Question: "Should I use GraphQL or REST?"
-Output: "GraphQL provides flexible queries, REST is simpler. Consider team expertise."
-Score: 0.9 (highly relevant)
-
-Output: "I recommend TypeScript for type safety"
-Score: 0.2 (not relevant - wrong topic)
-```
-
-**Why it matters:** Agents should stay on topic, not drift to tangential advice.
-
----
-
-## Code Execution Validation
-
-Uses Playwright to safely execute generated code:
-
-```python
-# Phoenix evaluator extracts code blocks
-code = """
-def fibonacci(n):
-    if n <= 1: return n
-    return fibonacci(n-1) + fibonacci(n-2)
-"""
-
-# Runs test assertions
-assertions = [
-    "assert fibonacci(0) == 0",
-    "assert fibonacci(5) == 5",
-    "assert fibonacci(10) == 55"
-]
-
-# Executes in isolated Python subprocess
-result = subprocess.run(['python3', temp_file], timeout=10)
-# ✅ PASS or ❌ FAIL
-```
-
-**Why it matters:** Code that looks correct but doesn't run is useless. This catches:
-- Syntax errors
-- Runtime errors
-- Logic bugs
-- API misuse
-
----
-
-## Interpreting A/B Test Results
-
-### Melodic Memory Example
-
-```
-📈 A/B Test Results:
-  QA Correctness Lift: +12.5%
-  Hallucination Reduction: +8.3%
-```
-
-**Interpretation:**
-- With melodic memory, agents give 12.5% more correct answers
-- Hallucinations reduced by 8.3% (fewer made-up facts)
-- **Conclusion**: Melodic line helps agents maintain coherent reasoning
-
-### Collective Brain Example
-
-```
-📈 A/B Test Results:
-  QA Correctness Lift: +18.2%
-  Relevance Lift: +7.4%
-```
-
-**Interpretation:**
-- Collective brain answers are 18.2% more correct
-- 7.4% more relevant (better coverage of the question)
-- **Conclusion**: Multi-agent consensus beats single-agent for complex questions
-
----
-
-## Customizing Evaluations
-
-### Add Your Own Test Cases
-
-Edit `create_melodic_memory_ab_test()` in `tests/phoenix_evaluator.py`:
-
-```python
-EvalInstance(
-    instance_id="custom_1",
-    question="Your question here",
-    reference_answer="Expected answer",
-    context="Relevant context",
-    expected_code="# Expected code snippet",
-    test_assertions=["assert result == expected"]
-)
-```
-
-### Change Evaluation Criteria
-
-Modify `_run_phoenix_evals()` to add custom evaluators:
-
-```python
-from phoenix.evals import CodeQualityEvaluator  # Custom evaluator
-
-code_eval = CodeQualityEvaluator()
-results = run_evals(
-    dataframe=eval_df,
-    evaluators=[code_eval],
-    provide_explanation=True
-)
-```
-
----
+**Good Results**:
+- Patch correctness: > 0.6 (60%)
+- Test pass rate: > 0.5 (50%)
+- Execution errors: < 0.05 (5%)
 
 ## Troubleshooting
 
-### "Phoenix connection refused"
+### Issue: Phoenix not accessible
 
+**Solution**: Ensure Phoenix is running:
 ```bash
-# Make sure Phoenix container is running
 docker compose ps phoenix
+docker compose up -d phoenix
+```
 
-# Check logs
+### Issue: Playwright browser not found
+
+**Solution**: Install Playwright browser:
+```bash
+playwright install chromium
+```
+
+### Issue: No results in Phoenix UI
+
+**Solution**: Check that evaluations are sending data:
+```bash
+# Check Phoenix logs
 docker compose logs phoenix --tail=50
 
-# Restart if needed
-docker compose restart phoenix
+# Verify traces are being sent
+curl http://localhost:6006/api/traces
 ```
 
-### "No module named 'phoenix'"
+### Issue: Code execution fails
 
+**Solution**: Check Playwright subprocess execution:
 ```bash
-# Install Phoenix SDK
-pip install arize-phoenix arize-phoenix-evals
-
-# Verify installation
-python -c "import phoenix; print(phoenix.__version__)"
+# Test Playwright directly
+python -c "from playwright.sync_api import sync_playwright; sync_playwright().start()"
 ```
-
-### "Playwright browsers not installed"
-
-```bash
-# Install Chromium for code execution
-playwright install chromium
-
-# Or install all browsers
-playwright install
-```
-
-### "HuggingFace dataset download timeout"
-
-```bash
-# SWE-bench Lite is ~500MB, might take time
-# Use fewer instances for quick tests
-python tests/phoenix_evaluator.py --experiment swe_bench --num_instances 5
-```
-
----
 
 ## Best Practices
 
-### 1. Start Small
+1. **Run Baseline First**: Establish control group baseline before testing treatment
+2. **Multiple Runs**: Run experiments multiple times for statistical significance
+3. **Track Over Time**: Use timestamped CSV exports to track improvements
+4. **Compare Metrics**: Look at multiple metrics, not just one
+5. **Drill Into Failures**: Use Phoenix UI to identify failure patterns
 
-Run 5-10 instances first to verify everything works:
+## Related Documentation
 
-```bash
-python tests/phoenix_evaluator.py --experiment swe_bench --num_instances 5
-```
-
-### 2. Use Control Groups
-
-Always run A/B tests with control and treatment:
-- Control: Baseline configuration
-- Treatment: New feature (melodic memory, collective brain)
-
-### 3. Check Phoenix UI During Runs
-
-Watch traces in real-time at `http://localhost:6006` to debug issues.
-
-### 4. Save Results
-
-All results auto-saved to `results/phoenix_evals/*.csv` with timestamps.
-
-### 5. Iterate on Failures
-
-Filter Phoenix UI by low scores → identify patterns → improve prompts/logic.
-
----
+- [Phoenix Observability](PHOENIX_OBSERVABILITY.md) - General observability and tracing
+- [SWE-bench Integration](swe-bench-integration.md) - SWE-bench setup and usage
+- [Melodic Line Memory](KUZU_MELODIC_LINE_PROPOSAL.md) - Melodic memory implementation
+- [Collective Brain](COLLECTIVE_BRAIN.md) - Multi-agent consensus system
 
 ## Example Workflow
 
 ```bash
-# 1. Verify Phoenix is running
-curl http://localhost:6006/health
+# 1. Start Phoenix
+docker compose up -d phoenix
 
-# 2. Run melodic memory A/B test
-python tests/phoenix_evaluator.py --experiment melodic_memory_ab
+# 2. Run baseline (control)
+python tests/phoenix_evaluator.py --experiment melodic_memory_ab --group control
 
-# 3. View results in Phoenix UI
+# 3. Run treatment
+python tests/phoenix_evaluator.py --experiment melodic_memory_ab --group treatment
+
+# 4. View results in Phoenix UI
 open http://localhost:6006
 
-# 4. Click on "melodic_memory_treatment" project
-# 5. Compare QA Correctness scores
-# 6. Drill into low-scoring instances
-# 7. Identify improvement opportunities
-
-# 8. Run collective brain test
-python tests/phoenix_evaluator.py --experiment collective_brain_ab
-
-# 9. Compare collective_brain_treatment vs control
-
-# 10. Run SWE-bench on 10 instances
-python tests/phoenix_evaluator.py --experiment swe_bench --num_instances 10
-
-# 11. Check code execution pass rate
-# 12. Export CSV for further analysis
+# 5. Export results
+python tests/phoenix_evaluator.py --export results/phoenix_evals/melodic_memory_ab.csv
 ```
-
----
-
-## What to Look For
-
-### ✅ Good Signs
-
-- **High QA Correctness** (>80%): Agents answering correctly
-- **Low Hallucination** (<20%): Grounded in actual context
-- **High Relevance** (>85%): Staying on topic
-- **Code Pass Rate** (>70%): Generated code actually works
-
-### ⚠️ Warning Signs
-
-- **Low QA Correctness** (<60%): Agents not understanding questions
-- **High Hallucination** (>40%): Making up information
-- **Low Relevance** (<70%): Going off-topic
-- **Code Failures** (>40%): Generated code doesn't execute
-
----
-
-## Next Steps
-
-After running evaluations:
-
-1. **Identify Patterns**: What types of questions fail most?
-2. **Improve Prompts**: Update agent system prompts based on failures
-3. **Tune Hyperparameters**: Adjust temperature, candidate count, etc.
-4. **Add Training Data**: Feed successful examples back to improve
-5. **Compare Configurations**: Test different MAKER modes (High vs Low)
-
----
-
-## Resources
-
-- **Phoenix Docs**: https://docs.arize.com/phoenix
-- **Phoenix Evals**: https://docs.arize.com/phoenix/evaluation/llm-as-a-judge
-- **SWE-bench**: https://www.swebench.com/
-- **Playwright**: https://playwright.dev/python/
-
----
 
 ## Summary
 
-Phoenix Evaluations gives you **data-driven insights** into:
-- Does melodic line memory improve coherence? → Run A/B test
-- Does collective brain give better answers? → Run A/B test
-- Can MAKER fix real GitHub issues? → Run SWE-bench eval
-- Where are agents failing? → Drill into Phoenix UI
+The Phoenix Evaluations framework provides:
 
-**Key insight**: You now have quantitative metrics (not just vibes) to validate that your multi-agent architecture actually works better than single-agent baselines.
+✅ **Quantitative Validation**: Data-driven metrics, not just intuition  
+✅ **A/B Testing**: Control vs treatment comparison  
+✅ **Code Execution**: Real test validation with Playwright  
+✅ **Visual Analysis**: Phoenix UI for interactive exploration  
+✅ **Data Export**: CSV files for tracking over time  
+
+This gives you confidence that melodic line memory and collective brain actually improve agent performance!

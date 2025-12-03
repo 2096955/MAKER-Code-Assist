@@ -27,6 +27,7 @@ Complete documentation for the MAKER (Multi-Agent Knowledge-Enhanced Reasoning) 
 
 ### Observability & Monitoring
 - **[PHOENIX_OBSERVABILITY.md](PHOENIX_OBSERVABILITY.md)** - Phoenix dashboard usage and trace analysis
+- **[PHOENIX_EVALUATIONS.md](PHOENIX_EVALUATIONS.md)** - A/B testing and quantitative validation (melodic memory, collective brain, SWE-bench)
 - **[quickstart-memory-observability.md](quickstart-memory-observability.md)** - Memory and observability quick start
 
 ### RAG Integration
