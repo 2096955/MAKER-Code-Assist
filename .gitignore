@@ -34,15 +34,14 @@ firebase-debug.log
 # Temporary/duplicate images (keep only docs/assets/)
 MakerCode.png
 
-# Redundant summary files (use docs/DUAL_ORCHESTRATOR_SETUP.md instead)
+# Redundant root-level docs (moved to docs/ or removed)
 DUAL_ORCHESTRATOR_SUMMARY.md
-
-# Implementation planning/status docs (not needed for dual orchestrator system)
 CURSOR_IMPLEMENTATION_PLAN.md
 CURSOR_QUESTIONS_ANSWERED.md
 IMPLEMENTATION_SUMMARY.md
 README_CURSOR_IMPLEMENTATION.md
 VSCode_VERIFICATION.md
+MakerCode.png
 docs/IMPLEMENTATION_COMPLETE.md
 docs/IMPLEMENTATION_STATUS.md
 docs/IMPLEMENTATION_SUMMARY.md
