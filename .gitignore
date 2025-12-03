@@ -83,6 +83,8 @@ codex/
 # skills/ is NOT in .gitignore
 
 # Local tool configs (not part of project)
+.cursorrules
+.continuerc.json
 .claude/
 .specify/
 prompts/
