@@ -67,6 +67,7 @@ services:
       - .:/app
       - ./agents:/app/agents
       - /Users/anthonylui:/host/Users/anthonylui:ro
+      - kuzu_workflow_db_high:/app/kuzu_workflow_db
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -94,6 +95,8 @@ services:
       - ENABLE_LONG_RUNNING=true
       - TRIGGER_ENABLED=false
       - EE_MODE=true
+      - ENABLE_MELODIC_MEMORY=true
+      - KUZU_DB_PATH=/app/kuzu_workflow_db
     restart: unless-stopped
     command: python -m orchestrator.api_server
 
@@ -114,6 +117,7 @@ services:
       - .:/app
       - ./agents:/app/agents
       - /Users/anthonylui:/host/Users/anthonylui:ro
+      - kuzu_workflow_db_low:/app/kuzu_workflow_db
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -141,6 +145,8 @@ services:
       - ENABLE_LONG_RUNNING=true
       - TRIGGER_ENABLED=false
       - EE_MODE=true
+      - ENABLE_MELODIC_MEMORY=true
+      - KUZU_DB_PATH=/app/kuzu_workflow_db
     restart: unless-stopped
     command: python -m orchestrator.api_server
 
@@ -167,6 +173,8 @@ volumes:
   redis_data:
   qdrant_data:
   phoenix_data:
+  kuzu_workflow_db_high:
+  kuzu_workflow_db_low:
 
 networks:
   default:
