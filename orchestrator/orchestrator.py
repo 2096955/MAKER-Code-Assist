@@ -1420,18 +1420,61 @@ Be direct. Output working code in a markdown code block. No questions."""
             # Check if user specified a different path
             import re
             path_match = re.search(r'/Users/[\w/]+|/[a-zA-Z0-9_/\-\.]+', user_input)
+
             if path_match:
                 specified_path = path_match.group(0)
-                current_codebase = self.codebase_root
-                yield f"[ANALYST] ⚠️ Path Limitation Detected\n\n"
-                yield f"You specified: `{specified_path}`\n"
-                yield f"Currently analyzing: `{current_codebase}`\n\n"
-                yield f"**Why this happens:**\n"
-                yield f"The MCP server (codebase access) is containerized and only mounted to the current directory.\n"
-                yield f"To analyze a different codebase, you would need to:\n"
-                yield f"1. Update `docker-compose.yml` to mount `{specified_path}:/codebase`\n"
-                yield f"2. Restart the MCP server: `docker compose restart mcp-server`\n\n"
-                yield f"**For now, I'll analyze the current codebase** (`{current_codebase}`):\n\n"
+
+                # Try to analyze the specified path directly from filesystem
+                if os.path.exists(specified_path) and os.path.isdir(specified_path):
+                    yield f"[ANALYST] Analyzing `{specified_path}`...\n\n"
+
+                    # Count files and lines directly
+                    import glob
+                    excluded = {'.git', 'node_modules', 'dist', 'build', '__pycache__', '.venv', 'venv'}
+
+                    code_extensions = {'.py', '.js', '.ts', '.tsx', '.jsx', '.java', '.go', '.rs', '.rb', '.php', '.c', '.cpp', '.h'}
+                    total_files = 0
+                    total_lines = 0
+                    lang_counts = {}
+
+                    for root, dirs, files in os.walk(specified_path):
+                        # Skip excluded directories
+                        dirs[:] = [d for d in dirs if d not in excluded]
+
+                        for file in files:
+                            total_files += 1
+                            ext = os.path.splitext(file)[1]
+
+                            if ext in code_extensions:
+                                lang_counts[ext] = lang_counts.get(ext, 0) + 1
+
+                                # Count lines
+                                try:
+                                    file_path = os.path.join(root, file)
+                                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                        total_lines += sum(1 for _ in f)
+                                except:
+                                    pass
+
+                    # Get directory structure
+                    top_dirs = []
+                    for item in os.listdir(specified_path):
+                        item_path = os.path.join(specified_path, item)
+                        if os.path.isdir(item_path) and not item.startswith('.') and item not in excluded:
+                            top_dirs.append(item)
+
+                    yield f"**Files:** {total_files}\n"
+                    yield f"**Lines:** {total_lines:,}\n"
+                    if lang_counts:
+                        yield f"**Code:** {', '.join(f'{k} ({v})' for k, v in sorted(lang_counts.items(), key=lambda x: x[1], reverse=True))}\n"
+                    if top_dirs:
+                        yield f"**Structure:** {', '.join(sorted(top_dirs)[:8])}\n"
+
+                    return
+                else:
+                    yield f"[ANALYST] Cannot access `{specified_path}`\n\n"
+                    yield f"Path does not exist or is not accessible from orchestrator.\n"
+                    yield f"Analyzing current codebase instead (`{self.codebase_root}`)...\n\n"
 
             try:
                 overview_result = await self._query_mcp("analyze_codebase", {})
