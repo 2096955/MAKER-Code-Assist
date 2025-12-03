@@ -90,6 +90,16 @@ codex/
 prompts/
 plan.plan.md
 GEMINI.md
+CLAUDE.md
+
+# Internal documentation (keep local, not public)
+COMPLETED_FEATURES.md
+docs/CLAUDE_CODE_PATTERNS.md
+docs/claude-code-system-prompt-reference.md
+docs/context-engineering-skills-analysis.md
+docs/quickstart-memory-observability.md
+docs/reviewer-optional-plan.md
+docs/skills-framework-clarification.md
 docs/correction-mcp-vs-openai.md
 agents/AGENTS.md
 docs/mcp-wrapper-implementation.md
