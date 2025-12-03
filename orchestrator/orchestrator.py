@@ -1302,20 +1302,29 @@ Vote for the BEST candidate that preserves narrative coherence. Reply with only:
         """
         Classify request type using LLM intelligence: 'simple_code', 'question', 'complex_code'
 
-        This ensures accurate classification even with variations in phrasing.
+        Uses Preprocessor (Gemma2-2B) - the agent that's BEST at understanding intent.
         """
-        classification_prompt = """You are a request classifier. Classify the user's request into ONE of these categories:
+        classification_prompt = """You are a request classifier. Your strength is UNDERSTANDING INTENT.
 
-1. "question" - User is asking for information, explanation, guidance, or analysis
-   Examples: "What would I need to do...", "How does X work?", "Could you explain...", "Tell me about..."
+Classify the user's request into ONE category based on what they REALLY want:
 
-2. "simple_code" - User wants a simple, straightforward code snippet (< 50 lines)
-   Examples: "Write a hello world", "Create a function to...", "Generate a simple..."
+1. "question" - User wants to UNDERSTAND something (not build it)
+   - Codebase questions: "What can you tell me about...", "How does X work?"
+   - Guidance: "What would I need to do to..." (asking, not requesting implementation)
+   - Analysis: "Explain this code", "Why does this happen?"
 
-3. "complex_code" - User wants code implementation, refactoring, or feature development
-   Examples: "Implement authentication", "Refactor this module", "Add error handling"
+2. "simple_code" - User wants a SMALL code snippet (<50 lines)
+   - Quick utilities: "Write a hello world", "Create a function to..."
+   - One-off scripts: "Generate a regex for..."
 
-Respond with ONLY the category name: question, simple_code, or complex_code"""
+3. "complex_code" - User wants IMPLEMENTATION (code that solves a problem)
+   - Features: "Add JWT authentication", "Implement caching"
+   - Refactoring: "Refactor this module", "Improve performance"
+   - Debugging: "Fix the authentication bug"
+
+**YOUR STRENGTH**: Intent detection. Look past the words to what the user actually needs.
+
+Respond with ONLY: question, simple_code, or complex_code"""
 
         classification_request = f"""Classify this request:
 
