@@ -11,11 +11,13 @@ sentence-transformers==2.3.1
 faiss-cpu==1.7.4
 streamlit==1.31.0
 
-# Phoenix observability
+# Phoenix observability & evaluations
 opentelemetry-api==1.21.0
 opentelemetry-sdk==1.21.0
 opentelemetry-exporter-otlp-proto-http==1.21.0
 opentelemetry-instrumentation-httpx==0.42b0
+arize-phoenix==4.33.0
+arize-phoenix-evals==0.17.0
 
 # Expositional Engineering dependencies
 networkx==3.2.1
@@ -28,6 +30,8 @@ pyyaml==6.0.1
 # Testing
 pytest==8.0.0
 pytest-asyncio==0.23.0
+playwright==1.48.0
+pytest-playwright==0.6.2
 
 # Kùzu GraphRAG (optional - for melodic line memory)
 kuzu==0.6.0
