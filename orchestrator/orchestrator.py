@@ -61,6 +61,9 @@ from orchestrator.skill_registry import SkillRegistry
 # Kùzu melodic line memory imports
 from orchestrator.kuzu_memory import SharedWorkflowMemory
 
+# Collective brain imports
+from orchestrator.collective_brain import CollectiveBrain
+
 
 @dataclass
 class ConversationMessage:
@@ -613,14 +616,21 @@ class Orchestrator:
                 if self.workflow_memory.enabled:
                     print("[Orchestrator] ✨ Melodic line memory enabled (Kùzu graph)")
                     print(f"[Orchestrator]    Agents will maintain coherent reasoning chain")
+
+                    # Initialize collective brain for multi-agent consensus
+                    self.collective_brain = CollectiveBrain(self)
+                    print("[Orchestrator] 🧠 Collective brain enabled (multi-agent consensus)")
                 else:
                     print("[Orchestrator] ⚠️  Kùzu not available, melodic memory disabled")
+                    self.collective_brain = None
                     self.workflow_memory = None
             except Exception as e:
                 print(f"[Orchestrator] Failed to initialize melodic memory: {e}")
                 self.workflow_memory = None
+                self.collective_brain = None
         else:
             self.workflow_memory = None
+            self.collective_brain = None
 
         # Log MAKER mode for visibility
         if self.maker_mode == "low":
@@ -1736,6 +1746,59 @@ Provide specific, practical guidance based on THIS code."""
                 yield chunk
 
         else:
+            # Detect if this is a complex question that needs collective intelligence
+            complex_keywords = [
+                "should i", "which is better", "what's the best way",
+                "how should i approach", "architecture", "design decision",
+                "trade-off", "pros and cons", "compare", "versus",
+                "recommend", "suggest approach", "unclear", "not sure"
+            ]
+
+            is_complex = any(kw in lower_input for kw in complex_keywords)
+
+            # For complex questions, consult collective brain (multiple agents)
+            if is_complex and self.collective_brain:
+                yield f"[COLLECTIVE BRAIN] Consulting multiple agents for complex question...\n\n"
+
+                # Determine problem type from keywords
+                problem_type = "understanding"
+                if any(word in lower_input for word in ["architecture", "design", "structure"]):
+                    problem_type = "architecture"
+                elif any(word in lower_input for word in ["bug", "error", "debug", "wrong", "not working"]):
+                    problem_type = "debugging"
+                elif any(word in lower_input for word in ["plan", "approach", "strategy"]):
+                    problem_type = "planning"
+                elif any(word in lower_input for word in ["security", "safe", "vulnerability"]):
+                    problem_type = "security"
+
+                try:
+                    result = await self.collective_brain.consult_collective(
+                        problem=user_input,
+                        problem_type=problem_type,
+                        context="",
+                        user_question=user_input
+                    )
+
+                    # Show consensus
+                    yield f"**Consensus ({result['confidence']:.0%} confidence):**\n\n"
+                    yield f"{result['consensus']}\n\n"
+
+                    # Show individual perspectives if helpful
+                    if len(result['perspectives']) > 1:
+                        yield f"**Agent Perspectives:**\n"
+                        for p in result['perspectives']:
+                            yield f"- **{p.agent}** ({p.model}): {p.response[:200]}{'...' if len(p.response) > 200 else ''}\n"
+                        yield "\n"
+
+                    # Show dissenting opinions if any
+                    if result['dissenting']:
+                        yield f"⚠️ **Important Consideration:** {result['dissenting']}\n\n"
+
+                    return
+                except Exception as e:
+                    # Fall back to single-agent if collective fails
+                    yield f"Note: Collective brain unavailable ({e}), using single-agent analysis\n\n"
+
             # General question - use Preprocessor for fast answers
             yield f"[ANALYST] Answering your question...\n\n"
 
