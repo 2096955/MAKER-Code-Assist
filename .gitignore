@@ -112,5 +112,22 @@ plan.md
 Dockerfile.llama-cpp
 orchestrator/mcp_wrapper.py
 
+# New internal files (implementation details, not user-facing)
+docs/COMMUNITY_DETECTION_IMPLEMENTATION.md
+docs/FIXES_APPLIED.md
+docs/GRAPH_RAG_EVALUATION.md
+docs/TESTING_STRATEGY.md
+docs/TEST_IMPLEMENTATION_SUMMARY.md
+tests/test_*_comprehensive.py
+tests/test_code_graph_*.py
+tests/test_community_detection.py
+tests/test_watcher_*.py
+
+# Kùzu database directory
+kuzu_workflow_db/
+
+# Results directory
+results/phoenix_evals/
+
 # Test scripts (kept in git for documentation)
 # test_file_streaming.sh is NOT ignored

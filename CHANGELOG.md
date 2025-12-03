@@ -7,9 +7,117 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added - Dual Orchestrator Architecture
+### Added - Melodic Line Memory & Collective Brain (December 2025)
 
-**Date**: December 2025
+**Major Intelligence Upgrade**: Added Kùzu-based melodic line memory and multi-agent collective brain for coherent reasoning and consensus.
+
+#### Melodic Line Memory (Kùzu Graph Database)
+
+**Problem Solved**: Agents were operating sequentially without shared context. By the time Reviewer ran, it didn't know what Preprocessor understood or why Planner chose certain subtasks.
+
+**Solution**: Kùzu graph database where each agent writes its reasoning. Later agents read the full reasoning chain (the "melodic line") to maintain coherent intent.
+
+**How It Works**:
+1. Preprocessor writes: "Detected security requirement in user request"
+2. Planner reads Preprocessor's reasoning → writes: "Based on security focus, planning JWT implementation"
+3. Coder reads BOTH → writes: "Implementing secure JWT as planned"
+4. Reviewer reads ENTIRE chain → validates against original intent
+
+**Files**:
+- `orchestrator/kuzu_memory.py` - SharedWorkflowMemory implementation
+- `docker-compose.yml` - Added persistent Kùzu database volumes
+
+**Enable/Disable**: Set `ENABLE_MELODIC_MEMORY=true/false` in environment
+
+#### Collective Brain (Multi-Agent Consensus)
+
+**Problem Solved**: Single-agent answers miss other perspectives. Complex questions (architecture, design, security) benefit from multiple expert viewpoints.
+
+**Solution**: For complex questions, consult multiple agents in parallel and synthesize their answers.
+
+**Expert Panels by Problem Type**:
+- **Architecture**: Planner (strategy) + Coder (implementation) + Reviewer (quality)
+- **Debugging**: Coder (code knowledge) + Reviewer (security/testing)
+- **Planning**: Preprocessor (understanding) + Planner (dependencies)
+- **Security**: Reviewer (audit) + Coder (implementation knowledge)
+
+**Output Format**:
+- **Consensus**: Synthesized answer from all agents
+- **Perspectives**: Individual agent views with confidence scores
+- **Dissenting Opinions**: Important disagreements flagged
+
+**Files**:
+- `orchestrator/collective_brain.py` - CollectiveBrain implementation
+- `orchestrator/orchestrator.py` - Integration into question-answering workflow
+
+#### Phoenix Evaluations Framework
+
+**Purpose**: Quantitative validation that melodic memory and collective brain actually work (data-driven metrics, not just intuition).
+
+**Evaluation Experiments**:
+
+1. **Melodic Memory A/B Test**
+   - Control: Agents WITHOUT melodic line memory
+   - Treatment: Agents WITH melodic line memory
+   - Metrics: QA correctness lift, hallucination reduction, relevance improvement
+
+2. **Collective Brain A/B Test**
+   - Control: Single-agent answers (Preprocessor only)
+   - Treatment: Multi-agent consensus
+   - Metrics: Answer quality, trade-off coverage, consensus confidence
+
+3. **SWE-bench Evaluation**
+   - Test code generation on real GitHub issues
+   - Validate with Playwright code execution
+   - Metrics: Patch correctness, test pass rate, execution errors
+
+**LLM-as-Judge Evaluators**:
+- **HallucinationEvaluator**: Detects unsupported claims
+- **QAEvaluator**: Measures answer correctness vs reference
+- **RelevanceEvaluator**: Checks if response is on-topic
+
+**Files**:
+- `tests/phoenix_evaluator.py` - Evaluation harness
+- `docs/PHOENIX_EVALUATIONS.md` - Complete usage guide
+
+**Usage**:
+```bash
+# Run melodic memory A/B test
+python tests/phoenix_evaluator.py --experiment melodic_memory_ab
+
+# Run collective brain A/B test
+python tests/phoenix_evaluator.py --experiment collective_brain_ab
+
+# Run SWE-bench evaluation (10 instances)
+python tests/phoenix_evaluator.py --experiment swe_bench --num_instances 10
+```
+
+**View Results**: http://localhost:6006 (Phoenix UI)
+
+#### Dependencies Added
+- `kuzu==0.6.0` - Graph database for melodic line memory
+- `arize-phoenix==4.33.0` - Observability platform
+- `arize-phoenix-evals==0.17.0` - LLM evaluation framework
+- `playwright==1.48.0` - Code execution validation
+- `pytest-playwright==0.6.2` - Testing integration
+
+#### Docker Configuration Changes
+- Added persistent volumes: `kuzu_workflow_db_high` and `kuzu_workflow_db_low`
+- Environment variables: `ENABLE_MELODIC_MEMORY=true`, `KUZU_DB_PATH=/app/kuzu_workflow_db`
+- Separate Kùzu databases for High and Low orchestrators
+
+#### Documentation Added
+- `docs/PHOENIX_EVALUATIONS.md` - Phoenix evaluations guide (setup, usage, interpretation)
+- `docs/KUZU_MELODIC_LINE_PROPOSAL.md` - Melodic memory architecture and implementation
+
+#### Documentation Updated
+- `CLAUDE.md` - Added Phoenix evaluations commands
+- `docs/README.md` - Added link to Phoenix evaluations
+- `docs/PHOENIX_OBSERVABILITY.md` - Added reference to evaluations framework
+
+---
+
+### Added - Dual Orchestrator Architecture (December 2025)
 
 **Major Architecture Change**: Migrated from single orchestrator to dual orchestrator architecture for instant mode switching.
 
