@@ -1433,20 +1433,23 @@ Be direct. Output working code in a markdown code block. No questions."""
                 yield f"2. Restart the MCP server: `docker compose restart mcp-server`\n\n"
                 yield f"**For now, I'll analyze the current codebase** (`{current_codebase}`):\n\n"
 
-            yield f"[ANALYST] Analyzing codebase...\n\n"
             try:
                 overview_result = await self._query_mcp("analyze_codebase", {})
                 if isinstance(overview_result, dict):
-                    yield f"**Codebase Overview:**\n"
-                    yield f"- Total files: {overview_result.get('total_files', 'N/A')}\n"
-                    yield f"- Total lines: {overview_result.get('total_lines', 'N/A'):,}\n"
-                    yield f"- Languages: {', '.join(k for k in overview_result.get('languages', {}).keys() if k.startswith('.'))}\n"
-                    yield f"- Main directories: {', '.join(overview_result.get('directories', [])[:10])}\n\n"
+                    languages = overview_result.get('languages', {})
+                    # Filter to actual code files
+                    code_languages = {k: v for k, v in languages.items() if k in ['.py', '.js', '.ts', '.tsx', '.jsx', '.java', '.go', '.rs', '.rb', '.php', '.c', '.cpp', '.h']}
 
-                    # Read README for context
-                    readme_result = await self._query_mcp("read_file", {"path": "README.md"})
-                    if readme_result and not readme_result.startswith(" File not found"):
-                        yield f"**README.md:**\n```\n{readme_result[:2000]}\n```\n\n"
+                    yield f"**Files:** {overview_result.get('total_files', 'N/A')}\n"
+                    yield f"**Lines:** {overview_result.get('total_lines', 'N/A'):,}\n"
+                    if code_languages:
+                        yield f"**Code:** {', '.join(f'{k} ({v})' for k, v in sorted(code_languages.items(), key=lambda x: x[1], reverse=True))}\n"
+
+                    dirs = overview_result.get('directories', [])
+                    # Filter out hidden/cache directories
+                    visible_dirs = [d for d in dirs if not d.startswith('.') and d not in ['workspace', '__pycache__']][:8]
+                    if visible_dirs:
+                        yield f"**Structure:** {', '.join(visible_dirs)}\n"
                 return
             except Exception as e:
                 yield f"Error analyzing codebase: {e}\n"
