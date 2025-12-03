@@ -1468,6 +1468,33 @@ Be direct. Output working code in a markdown code block. No questions."""
                         if os.path.isdir(item_path) and not item.startswith('.') and item not in excluded:
                             top_dirs.append(item)
 
+                    # Read README to understand what the codebase is about
+                    readme_content = None
+                    for readme_name in ['README.md', 'README.txt', 'README']:
+                        readme_path = os.path.join(container_path, readme_name)
+                        if os.path.exists(readme_path):
+                            try:
+                                with open(readme_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                    readme_content = f.read()
+                                break
+                            except:
+                                pass
+
+                    # Extract first substantive paragraph from README
+                    if readme_content:
+                        lines = readme_content.split('\n')
+                        description = []
+                        for line in lines:
+                            line = line.strip()
+                            # Skip headers, badges, images
+                            if line and not line.startswith('#') and not line.startswith('!') and not line.startswith('[') and not line.startswith('```'):
+                                description.append(line)
+                                if len(' '.join(description)) > 200:
+                                    break
+
+                        if description:
+                            yield f"{' '.join(description)[:300]}\n\n"
+
                     yield f"**Files:** {total_files}\n"
                     yield f"**Lines:** {total_lines:,}\n"
                     if lang_counts:
