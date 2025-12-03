@@ -1549,6 +1549,25 @@ Be direct. Output working code in a markdown code block. No questions."""
             try:
                 overview_result = await self._query_mcp("analyze_codebase", {})
                 if isinstance(overview_result, dict):
+                    # Use Gemma2-2B to extract README description (same as external codebases)
+                    readme_result = await self._query_mcp("read_file", {"path": "README.md"})
+                    if readme_result and not readme_result.startswith(" File not found"):
+                        summary_prompt = "Extract the main purpose/description of this codebase in 1-2 sentences. Ignore badges, images, and formatting. Focus on WHAT this project does."
+                        summary_request = f"README content:\n{readme_result[:3000]}\n\nSummarize what this codebase does:"
+
+                        try:
+                            description = await self.call_agent_sync(
+                                AgentName.PREPROCESSOR,
+                                summary_prompt,
+                                summary_request,
+                                temperature=0.3
+                            )
+                            description = description.strip()[:300]
+                            if description and not description.startswith("Error:"):
+                                yield f"{description}\n\n"
+                        except:
+                            pass
+
                     languages = overview_result.get('languages', {})
                     # Filter to actual code files
                     code_languages = {k: v for k, v in languages.items() if k in ['.py', '.js', '.ts', '.tsx', '.jsx', '.java', '.go', '.rs', '.rb', '.php', '.c', '.cpp', '.h']}
