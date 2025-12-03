@@ -66,6 +66,7 @@ services:
     volumes:
       - .:/app
       - ./agents:/app/agents
+      - /Users/anthonylui:/host/Users/anthonylui:ro
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -112,6 +113,7 @@ services:
     volumes:
       - .:/app
       - ./agents:/app/agents
+      - /Users/anthonylui:/host/Users/anthonylui:ro
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379

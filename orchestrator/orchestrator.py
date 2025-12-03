@@ -1424,8 +1424,13 @@ Be direct. Output working code in a markdown code block. No questions."""
             if path_match:
                 specified_path = path_match.group(0)
 
+                # Map host paths to container paths (Docker volume mount)
+                container_path = specified_path
+                if specified_path.startswith('/Users/anthonylui'):
+                    container_path = specified_path.replace('/Users/anthonylui', '/host/Users/anthonylui')
+
                 # Try to analyze the specified path directly from filesystem
-                if os.path.exists(specified_path) and os.path.isdir(specified_path):
+                if os.path.exists(container_path) and os.path.isdir(container_path):
                     yield f"[ANALYST] Analyzing `{specified_path}`...\n\n"
 
                     # Count files and lines directly
@@ -1437,7 +1442,7 @@ Be direct. Output working code in a markdown code block. No questions."""
                     total_lines = 0
                     lang_counts = {}
 
-                    for root, dirs, files in os.walk(specified_path):
+                    for root, dirs, files in os.walk(container_path):
                         # Skip excluded directories
                         dirs[:] = [d for d in dirs if d not in excluded]
 
@@ -1458,8 +1463,8 @@ Be direct. Output working code in a markdown code block. No questions."""
 
                     # Get directory structure
                     top_dirs = []
-                    for item in os.listdir(specified_path):
-                        item_path = os.path.join(specified_path, item)
+                    for item in os.listdir(container_path):
+                        item_path = os.path.join(container_path, item)
                         if os.path.isdir(item_path) and not item.startswith('.') and item not in excluded:
                             top_dirs.append(item)
 
