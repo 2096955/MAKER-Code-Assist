@@ -497,22 +497,22 @@ class CodebaseMCPServer:
                 def visit_Name(self, node):
                     if node.id == self.target:
                         self.refs.append((node.lineno, "name"))
-                    self.generic_visit()
+                    self.generic_visit(node)
                 
                 def visit_Attribute(self, node):
                     if isinstance(node.attr, str) and node.attr == self.target:
                         self.refs.append((node.lineno, "attribute"))
-                    self.generic_visit()
+                    self.generic_visit(node)
                 
                 def visit_FunctionDef(self, node):
                     if node.name == self.target:
                         self.refs.append((node.lineno, "definition"))
-                    self.generic_visit()
+                    self.generic_visit(node)
                 
                 def visit_ClassDef(self, node):
                     if node.name == self.target:
                         self.refs.append((node.lineno, "definition"))
-                    self.generic_visit()
+                    self.generic_visit(node)
             
             visitor = ReferenceVisitor(symbol)
             visitor.visit(tree)

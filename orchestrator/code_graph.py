@@ -289,8 +289,9 @@ class CodeGraph:
         """Persist graph to Redis with versioning and atomic updates (with retry logic)"""
         import redis
         
-        graph_data = nx.node_link_data(self.graph)
-        serialized = json.dumps(graph_data)
+        # Serialize full graph state (not just raw graph data)
+        full_data = self.to_dict()
+        serialized = json.dumps(full_data)
         
         # Use Redis transaction with optimistic locking
         max_retries = 3
