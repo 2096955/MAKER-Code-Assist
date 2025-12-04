@@ -138,9 +138,29 @@ class ContextCompressor:
         if not messages:
             return ""
         
+        # Use full content instead of truncating - let the summarization model handle it
+        # This preserves important code snippets and technical details
         chunk_text = "\n".join([
-            f"{msg.role}: {msg.content[:1000]}" for msg in messages
+            f"{msg.role}: {msg.content}" for msg in messages
         ])
+        
+        # If chunk is extremely large, truncate to reasonable size but preserve structure
+        max_chunk_size = self.summary_chunk_size * 2  # Allow 2x for summarization input
+        if len(chunk_text) > max_chunk_size:
+            # Truncate but preserve message boundaries
+            truncated = []
+            current_size = 0
+            for msg in messages:
+                msg_text = f"{msg.role}: {msg.content}"
+                if current_size + len(msg_text) > max_chunk_size:
+                    # Truncate this message if needed
+                    remaining = max_chunk_size - current_size - len(f"{msg.role}: ")
+                    if remaining > 100:  # Only truncate if we can preserve at least 100 chars
+                        truncated.append(f"{msg.role}: {msg.content[:remaining]}... [truncated]")
+                    break
+                truncated.append(msg_text)
+                current_size += len(msg_text)
+            chunk_text = "\n".join(truncated)
         
         if self.custom_compact_instructions:
             summary_prompt = f"""Summarize this conversation following these instructions:
@@ -162,7 +182,14 @@ Be brief but retain critical technical details."""
             temperature=0.1
         )
         
-        return summary if not summary.startswith("Error:") else chunk_text[:500]
+        # Better error handling: preserve more content on failure, or use a fallback summary
+        if summary.startswith("Error:") or not summary.strip():
+            # Fallback: create a structured summary preserving key information
+            # Preserve at least 2000 chars instead of just 500
+            fallback_size = min(2000, len(chunk_text))
+            return f"[Summary unavailable - preserving key content]\n{chunk_text[:fallback_size]}"
+        
+        return summary
     
     async def compress_if_needed(self, force: bool = False) -> bool:
         """
@@ -226,6 +253,9 @@ Be brief but retain critical technical details."""
         """
         Get the full context string for sending to an agent.
         Proactively compresses if approaching 95% threshold (OpenCode pattern).
+        
+        Args:
+            include_system: Whether to include system messages (currently all messages are included)
         """
         # Proactive compression: Check and compress if needed before returning context
         await self.compress_if_needed()
@@ -236,10 +266,20 @@ Be brief but retain critical technical details."""
             parts.append(f"[Previous conversation summary]\n{self.compressed_history}")
         
         if self.conversation_history:
-            recent_text = "\n".join([
-                f"{msg.role}: {msg.content}" for msg in self.conversation_history
-            ])
-            parts.append(f"[Recent conversation]\n{recent_text}")
+            # Filter system messages if requested (though currently all roles are included)
+            messages_to_include = self.conversation_history
+            if not include_system:
+                messages_to_include = [msg for msg in self.conversation_history if msg.role != "system"]
+            
+            if messages_to_include:
+                recent_text = "\n".join([
+                    f"{msg.role}: {msg.content}" for msg in messages_to_include
+                ])
+                parts.append(f"[Recent conversation]\n{recent_text}")
+        
+        # Return meaningful empty string if no context
+        if not parts:
+            return "[No previous conversation]"
         
         return "\n\n".join(parts)
     
