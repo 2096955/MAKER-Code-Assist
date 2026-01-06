@@ -10,10 +10,13 @@ Supports .maker.json configuration:
 """
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import List, Set, Optional, Dict
 from functools import lru_cache
+
+logger = logging.getLogger(__name__)
 
 
 class ToolPermissions:
@@ -48,8 +51,8 @@ class ToolPermissions:
                         config["allowed_tools"] = project_config["allowed_tools"]
                     if "blocked_tools" in project_config:
                         config["blocked_tools"].extend(project_config["blocked_tools"])
-            except Exception as e:
-                print(f"Warning: Failed to load .maker.json: {e}")
+            except (OSError, json.JSONDecodeError) as e:
+                logger.warning(f"Failed to load .maker.json: {e}")
         
         # 2. Load global config (if exists)
         global_config_path = Path.home() / ".config" / "maker" / ".maker.json"
@@ -61,8 +64,8 @@ class ToolPermissions:
                     if "blocked_tools" in global_config:
                         config["blocked_tools"].extend(global_config["blocked_tools"])
                     # Global allowed_tools is ignored (project takes precedence)
-            except Exception as e:
-                print(f"Warning: Failed to load global .maker.json: {e}")
+            except (OSError, json.JSONDecodeError) as e:
+                logger.warning(f"Failed to load global .maker.json: {e}")
         
         # Deduplicate blocked_tools
         config["blocked_tools"] = list(set(config["blocked_tools"]))

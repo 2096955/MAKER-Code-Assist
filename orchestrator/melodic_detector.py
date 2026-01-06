@@ -11,6 +11,7 @@ Enhanced with:
 """
 
 import ast
+import logging
 from typing import List, Dict, Set, Tuple, Optional
 from collections import defaultdict
 from pathlib import Path
@@ -18,6 +19,8 @@ import re
 import time
 import numpy as np
 from orchestrator.ee_memory import MelodicLine, MemoryNode, MemoryLevel
+
+logger = logging.getLogger(__name__)
 
 # Optional semantic analysis dependencies
 try:
@@ -48,9 +51,9 @@ class MelodicLineDetector:
         if self.use_semantic:
             try:
                 self.embedder = SentenceTransformer(embedding_model)
-                print(f"[MelodicDetector] Semantic analysis enabled with {embedding_model}")
-            except Exception as e:
-                print(f"[MelodicDetector] Warning: Could not load embedding model: {e}")
+                logger.info(f"[MelodicDetector] Semantic analysis enabled with {embedding_model}")
+            except (ValueError, OSError, ImportError) as e:
+                logger.warning(f"[MelodicDetector] Could not load embedding model: {e}")
                 self.use_semantic = False
         
         # Temporal access tracking for persistence scoring
@@ -234,8 +237,8 @@ class MelodicLineDetector:
                         semantic_graph[key1].add(key2)
                         semantic_graph[key2].add(key1)
         
-        except Exception as e:
-            print(f"[MelodicDetector] Warning: Semantic analysis failed: {e}")
+        except (ValueError, AttributeError, TypeError) as e:
+            logger.warning(f"[MelodicDetector] Semantic analysis failed: {e}")
         
         return semantic_graph
     
@@ -373,7 +376,7 @@ class MelodicLineDetector:
                     clustered.add(path1)
         
         except Exception as e:
-            print(f"[MelodicDetector] Warning: Semantic clustering failed: {e}")
+            logger.warning(f"[MelodicDetector] Semantic clustering failed: {e}")
         
         return clusters
     

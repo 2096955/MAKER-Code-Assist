@@ -6,6 +6,9 @@ Implements the full specification with NetworkX, Thematic PageRank, and Bayesian
 This is the complete implementation matching the specification document.
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
 import numpy as np
 from typing import Dict, List, Tuple, Optional, Set
 from dataclasses import dataclass, field
@@ -190,7 +193,7 @@ class CodebaseWorldModel:
                     all_files = [f['path'] for f in result.get('key_files', [])]
                 else:
                     all_files = []
-            except:
+            except Exception:
                 all_files = []
         else:
             # Fallback: scan filesystem
@@ -548,7 +551,7 @@ class CodebaseWorldModel:
                             path = nx.shortest_path(subgraph, nodes_list[i], nodes_list[j])
                             if len(path) > 1:
                                 paths.append(path)
-                        except:
+                        except Exception:
                             pass
                 
                 critical_paths = []
@@ -559,7 +562,7 @@ class CodebaseWorldModel:
                         to_mod = longest_path[k+1].split('.')[0]
                         if from_mod != to_mod:
                             critical_paths.append((from_mod, to_mod))
-        except:
+        except Exception:
             critical_paths = []
         
         # Compute coherence and persistence
@@ -700,7 +703,7 @@ class CodebaseWorldModel:
                             content = f.read()
                     
                     code_snippets.append(f"# Module: {module}\n# Path: {file_path}\n\n{content[:2000]}")
-                except:
+                except Exception:
                     pass
         
         return "\n\n" + "="*80 + "\n\n".join(code_snippets)

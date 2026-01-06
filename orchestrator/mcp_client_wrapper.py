@@ -5,8 +5,11 @@ Provides MCP interface that CodebaseWorldModel expects
 """
 
 import httpx
+import logging
 from typing import List, Dict, Optional
 import os
+
+logger = logging.getLogger(__name__)
 
 
 class MCPClientWrapper:
@@ -28,8 +31,8 @@ class MCPClientWrapper:
                     result = response.json()
                     return result.get("result", "")
                 return ""
-        except Exception as e:
-            print(f"[MCP Wrapper] Error: {e}")
+        except (httpx.HTTPError, httpx.TimeoutException, ConnectionError) as e:
+            logger.error(f"[MCP Wrapper] Error: {e}")
             return ""
     
     def analyze_codebase(self) -> Dict:
@@ -48,7 +51,7 @@ class MCPClientWrapper:
             try:
                 import json
                 return json.loads(result)
-            except:
+            except (json.JSONDecodeError, ValueError, TypeError):
                 # Return as dict with key_files
                 return {
                     "key_files": [],

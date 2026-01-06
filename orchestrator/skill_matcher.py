@@ -5,8 +5,11 @@ Skill matcher for finding relevant skills for tasks using RAG.
 Uses keyword matching, semantic search, and success rate weighting.
 """
 
+import logging
 from typing import List, Optional
 from orchestrator.skill_loader import SkillLoader, Skill
+
+logger = logging.getLogger(__name__)
 
 
 class SkillMatcher:
@@ -71,8 +74,8 @@ class SkillMatcher:
                             text=doc['text'],
                             metadata=doc.get('metadata', {})
                         )
-            except Exception as e:
-                print(f"Warning: Failed to index skills in RAG: {e}")
+            except (AttributeError, ValueError, TypeError) as e:
+                logger.warning(f"Failed to index skills in RAG: {e}")
         
         self._skills_indexed = True
     
@@ -146,8 +149,8 @@ class SkillMatcher:
                         # Use similarity score from RAG (normalized to 0-1)
                         semantic_score = result.get('score', 0.0)
                         break
-            except Exception as e:
-                print(f"Warning: RAG search failed: {e}")
+            except (AttributeError, ValueError, TypeError) as e:
+                logger.warning(f"RAG search failed: {e}")
         
         # Fallback: Simple text similarity if RAG not available
         if semantic_score == 0.0:

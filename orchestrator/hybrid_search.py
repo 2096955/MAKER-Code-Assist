@@ -8,9 +8,12 @@ Implements open-docs pattern for multi-level retrieval:
 3. Re-rank and merge results
 """
 
+import logging
 from typing import List, Dict, Optional, Set
 from pathlib import Path
 import re
+
+logger = logging.getLogger(__name__)
 
 
 class HybridSearch:
@@ -68,8 +71,8 @@ class HybridSearch:
                             'score': 0.8 if ref_type == 'definition' else 0.6,  # Definitions score higher
                             'source': 'keyword'
                         })
-            except Exception as e:
-                print(f"Warning: Keyword search failed for '{keyword}': {e}")
+            except (ValueError, AttributeError, TypeError) as e:
+                logger.warning(f"Keyword search failed for '{keyword}': {e}")
                 continue
         
         # Deduplicate by file_path + line_number
@@ -221,15 +224,15 @@ class HybridSearch:
         if self.rag:
             try:
                 semantic_results = self.rag.search(query, top_k=top_k * 2)  # Get more for re-ranking
-            except Exception as e:
-                print(f"Warning: Semantic search failed: {e}")
+            except (ValueError, AttributeError, TypeError) as e:
+                logger.warning(f"Semantic search failed: {e}")
         
         # 2. Keyword search (grep-based)
         if self.mcp:
             try:
                 keyword_results = self.keyword_search(query, top_k=top_k * 2)  # Get more for re-ranking
             except Exception as e:
-                print(f"Warning: Keyword search failed: {e}")
+                logger.warning(f"Keyword search failed: {e}")
         
         # 3. Merge and re-rank
         return self.merge_and_rerank(semantic_results, keyword_results, top_k)

@@ -11,17 +11,20 @@ This solves the problem of agents operating "all over the place" with no shared 
 import os
 import time
 import json
+import logging
 from typing import Optional, Dict, Any, List
 from pathlib import Path
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 try:
     import kuzu
     KUZU_AVAILABLE = True
 except ImportError:
     KUZU_AVAILABLE = False
-    print("[WARNING] Kùzu not installed. Melodic line memory disabled.")
-    print("         Install with: pip install kuzu==0.6.0")
+    logger.warning("[WARNING] Kùzu not installed. Melodic line memory disabled.")
+    logger.warning("         Install with: pip install kuzu==0.6.0")
 
 
 @dataclass
@@ -95,9 +98,9 @@ class SharedWorkflowMemory:
             self.db = kuzu.Database(self.db_path)
             self.conn = kuzu.Connection(self.db)
             self._init_schema()
-            print(f"[KùzuMemory] Initialized workflow memory at {self.db_path}")
+            logger.info(f"[KùzuMemory] Initialized workflow memory at {self.db_path}")
         except Exception as e:
-            print(f"[KùzuMemory] Failed to initialize: {e}")
+            logger.error(f"[KùzuMemory] Failed to initialize: {e}")
             self.enabled = False
             self.db = None
             self.conn = None
@@ -156,9 +159,9 @@ class SharedWorkflowMemory:
                 )
             """)
 
-            print("[KùzuMemory] Schema initialized")
+            logger.info("[KùzuMemory] Schema initialized")
         except Exception as e:
-            print(f"[KùzuMemory] Schema initialization error: {e}")
+            logger.error(f"[KùzuMemory] Schema initialization error: {e}")
             # Schema might already exist, continue
 
     def create_task(self, task_id: str, user_input: str) -> bool:
@@ -190,7 +193,7 @@ class SharedWorkflowMemory:
             })
             return True
         except Exception as e:
-            print(f"[KùzuMemory] Error creating task: {e}")
+            logger.error(f"[KùzuMemory] Error creating task: {e}")
             return False
 
     def add_action(self,
@@ -265,7 +268,7 @@ class SharedWorkflowMemory:
 
             return action_id
         except Exception as e:
-            print(f"[KùzuMemory] Error adding action: {e}")
+            logger.error(f"[KùzuMemory] Error adding action: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -304,7 +307,7 @@ class SharedWorkflowMemory:
                     "reasoning": f"{agent} builds on {prev_agent}'s output: {reasoning[:200]}"
                 })
         except Exception as e:
-            print(f"[KùzuMemory] Error linking actions: {e}")
+            logger.error(f"[KùzuMemory] Error linking actions: {e}")
 
     def get_context_for_agent(self, task_id: str, agent: str, max_tokens: int = 4000) -> str:
         """
@@ -360,7 +363,7 @@ class SharedWorkflowMemory:
 
             return "\n".join(context_parts)
         except Exception as e:
-            print(f"[KùzuMemory] Error getting context: {e}")
+            logger.error(f"[KùzuMemory] Error getting context: {e}")
             return ""
 
     def get_melodic_line(self, task_id: str) -> List[Dict[str, Any]]:
@@ -405,7 +408,7 @@ class SharedWorkflowMemory:
                 for _, row in df.iterrows()
             ]
         except Exception as e:
-            print(f"[KùzuMemory] Error getting melodic line: {e}")
+            logger.error(f"[KùzuMemory] Error getting melodic line: {e}")
             return []
 
     def get_swarm_insights(self, task_id: str, exclude_agent: Optional[str] = None, limit: int = 10) -> str:
@@ -461,7 +464,7 @@ class SharedWorkflowMemory:
 
             return "\n".join(insights)
         except Exception as e:
-            print(f"[KùzuMemory] Error getting swarm insights: {e}")
+            logger.error(f"[KùzuMemory] Error getting swarm insights: {e}")
             return ""
 
     def add_swarm_coordination(self, action_id_1: str, action_id_2: str, collaboration_type: str):
@@ -489,7 +492,7 @@ class SharedWorkflowMemory:
                 "collab_type": collaboration_type
             })
         except Exception as e:
-            print(f"[KùzuMemory] Error adding coordination link: {e}")
+            logger.error(f"[KùzuMemory] Error adding coordination link: {e}")
 
     def update_task_status(self, task_id: str, status: str):
         """Update task status (preprocessing, planning, coding, reviewing, complete)"""
@@ -502,7 +505,7 @@ class SharedWorkflowMemory:
                 SET t.status = $status
             """, {"task_id": task_id, "status": status})
         except Exception as e:
-            print(f"[KùzuMemory] Error updating task status: {e}")
+            logger.error(f"[KùzuMemory] Error updating task status: {e}")
 
     def get_stats(self) -> Dict[str, Any]:
         """Get workflow memory statistics"""
@@ -527,7 +530,7 @@ class SharedWorkflowMemory:
                 "swarm_coordination_links": int(coords.iloc[0]['count'])
             }
         except Exception as e:
-            print(f"[KùzuMemory] Error getting stats: {e}")
+            logger.error(f"[KùzuMemory] Error getting stats: {e}")
             return {"enabled": True, "error": str(e)}
 
     def close(self):
@@ -537,6 +540,6 @@ class SharedWorkflowMemory:
                 # Kùzu auto-closes, but explicit close is good practice
                 self.conn = None
                 self.db = None
-                print("[KùzuMemory] Closed database connection")
+                logger.info("[KùzuMemory] Closed database connection")
             except Exception as e:
-                print(f"[KùzuMemory] Error closing: {e}")
+                logger.error(f"[KùzuMemory] Error closing: {e}")

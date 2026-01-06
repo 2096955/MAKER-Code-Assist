@@ -19,6 +19,7 @@ LIMITATIONS:
 
 import os
 import pickle
+import logging
 import subprocess
 from typing import List, Dict, Optional
 from pathlib import Path
@@ -28,6 +29,8 @@ import faiss
 from sentence_transformers import SentenceTransformer
 import httpx
 import base64
+
+logger = logging.getLogger(__name__)
 
 
 class RAGServiceFAISS:
@@ -54,7 +57,7 @@ class RAGServiceFAISS:
         self.preprocessor_url = preprocessor_url or os.getenv("PREPROCESSOR_URL", "http://localhost:8000/v1/chat/completions")
         
         # Initialize embedding model
-        print(f"Loading embedding model: {embedding_model}...")
+        logger.info(f"Loading embedding model: {embedding_model}...")
         self.embedder = SentenceTransformer(embedding_model)
         self.embedding_dim = self.embedder.get_sentence_embedding_dimension()
         
@@ -114,8 +117,8 @@ class RAGServiceFAISS:
                 if response.status_code == 200:
                     result = response.json()
                     return result.get("choices", [{}])[0].get("message", {}).get("content", content)
-        except Exception as e:
-            print(f"Warning: Multi-modal preprocessing failed: {e}")
+        except (httpx.HTTPError, httpx.TimeoutException, ValueError, KeyError) as e:
+            logger.warning(f"Multi-modal preprocessing failed: {e}")
         
         return content
     
@@ -146,7 +149,7 @@ class RAGServiceFAISS:
                 'metadata': doc.get('metadata', {})
             })
         
-        print(f"Added {len(documents)} documents to FAISS index (total: {self.index.ntotal})")
+        logger.info(f"Added {len(documents)} documents to FAISS index (total: {self.index.ntotal})")
     
     async def add_multimodal_document(self, content: str, content_type: str, metadata: Dict = None):
         """
@@ -199,7 +202,7 @@ class RAGServiceFAISS:
                     return 0.6
                 else:
                     return 0.4
-        except Exception:
+        except (subprocess.SubprocessError, OSError, ValueError, FileNotFoundError):
             pass
         
         # Fallback: use file system modification time
@@ -213,7 +216,7 @@ class RAGServiceFAISS:
                     return 0.7
                 else:
                     return 0.5
-        except Exception:
+        except (OSError, ValueError):
             pass
         
         return 0.5  # Default neutral score
@@ -415,15 +418,15 @@ Answer:"""
                                 'file_type': file_path.suffix
                             }
                         })
-                except Exception as e:
-                    print(f"Error reading {file_path}: {e}")
+                except (OSError, UnicodeDecodeError, PermissionError) as e:
+                    logger.error(f"Error reading {file_path}: {e}")
         
         # Add to FAISS index
         if documents:
             self.add_documents(documents)
-            print(f"Indexed {len(documents)} chunks from {codebase_root}")
+            logger.info(f"Indexed {len(documents)} chunks from {codebase_root}")
         else:
-            print("No documents found to index")
+            logger.warning("No documents found to index")
     
     def save_index(self, path: str):
         """Save FAISS index and documents to disk"""
@@ -435,7 +438,7 @@ Answer:"""
         with open(metadata_path, 'wb') as f:
             pickle.dump(self.documents, f)
         
-        print(f"Saved index to {path} and metadata to {metadata_path}")
+        logger.info(f"Saved index to {path} and metadata to {metadata_path}")
     
     def load_index(self, path: str):
         """Load FAISS index and documents from disk"""
@@ -448,7 +451,7 @@ Answer:"""
             with open(metadata_path, 'rb') as f:
                 self.documents = pickle.load(f)
         
-        print(f"Loaded index from {path} ({self.index.ntotal} vectors)")
+        logger.info(f"Loaded index from {path} ({self.index.ntotal} vectors)")
     
     def get_stats(self) -> Dict:
         """Get statistics about the index"""

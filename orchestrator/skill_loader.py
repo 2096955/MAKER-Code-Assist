@@ -6,10 +6,13 @@ Skills are stored in skills/ directory with YAML frontmatter.
 """
 
 import re
+import logging
 import yaml
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -136,12 +139,12 @@ class SkillLoader:
                 if not metadata:
                     return None
             except yaml.YAMLError as e:
-                print(f"Warning: Failed to parse YAML frontmatter in {path}: {e}")
+                logger.warning(f"Failed to parse YAML frontmatter in {path}: {e}")
                 return None
             
             # Validate required fields
             if 'name' not in metadata or 'description' not in metadata:
-                print(f"Warning: Skill {path} missing required fields (name, description)")
+                logger.warning(f"Skill {path} missing required fields (name, description)")
                 return None
             
             # Extract fields
@@ -170,8 +173,8 @@ class SkillLoader:
             
             return skill
             
-        except Exception as e:
-            print(f"Error loading skill from {path}: {e}")
+        except (OSError, UnicodeDecodeError, ValueError) as e:
+            logger.error(f"Error loading skill from {path}: {e}")
             return None
     
     def reload_skill(self, skill_name: str) -> Optional[Skill]:

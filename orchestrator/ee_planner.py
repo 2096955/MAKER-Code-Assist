@@ -4,6 +4,9 @@ Expositional Engineering Enhanced Planner Agent
 Implements Spec Section 3.1 - Narrative-aware task decomposition
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
 from typing import List, Dict, Optional, TYPE_CHECKING
 from dataclasses import dataclass, field
 import json
@@ -54,18 +57,18 @@ class EEPlannerAgent:
         Decompose task with narrative awareness
         Main method called by MAKER orchestrator
         """
-        print(f"\n{'='*80}")
-        print(f"EE Planner: Analysing task with narrative context")
-        print(f"Task: {task_description}")
-        print(f"{'='*80}\n")
+        logger.info(f1)
+        logger.info(f1)
+        logger.info(f1)
+        logger.info(f1)
         
         # Step 1: Query world model hierarchically
         print("[1/4] Querying hierarchical world model...")
         context = self.world_model.query_with_context(task_description)
         
-        print(f"  • Found {len(context['melodic_lines'])} relevant business narratives")
-        print(f"  • Identified {len(context['patterns'])} architectural patterns")
-        print(f"  • Retrieved {len(context['modules'])} modules")
+        logger.info(f1)
+        logger.info(f1)
+        logger.info(f1)
         
         # Step 2: Generate narrative-aware prompt
         print("[2/4] Constructing narrative-aware prompt...")
@@ -291,7 +294,7 @@ Begin:
 
         # Try to read file via MCP
         try:
-            print(f"[EE Planner] Detected file conversion task, reading source file: {file_path}")
+            logger.info(f1)
 
             # Call MCP read_file tool
             mcp_url = os.getenv("MCP_URL", "http://host.docker.internal:9001")
@@ -305,16 +308,16 @@ Begin:
                         result = await response.json()
                         content = result.get("result", "")
                         if content and not content.startswith(" File not found"):
-                            print(f"[EE Planner] Successfully read source file ({len(content)} chars)")
+                            logger.info(f1)
                             return content
                         else:
-                            print(f"[EE Planner] File not found: {file_path}")
+                            logger.info(f1)
                             return None
                     else:
-                        print(f"[EE Planner] Failed to read file: HTTP {response.status}")
+                        logger.info(f1)
                         return None
         except Exception as e:
-            print(f"[EE Planner] Error reading source file: {e}")
+            logger.info(f1)
             return None
 
     async def plan_task_async(self, task_description: str, orchestrator, planner_agent) -> List[EnhancedSubtask]:
@@ -322,18 +325,18 @@ Begin:
         Async version that uses actual MAKER Planner LLM
         Called by orchestrator with real agent
         """
-        print(f"\n{'='*80}")
-        print(f"EE Planner: Analysing task with narrative context")
-        print(f"Task: {task_description}")
-        print(f"{'='*80}\n")
+        logger.info(f1)
+        logger.info(f1)
+        logger.info(f1)
+        logger.info(f1)
         
         # Step 1: Query world model hierarchically
         print("[1/4] Querying hierarchical world model...")
         context = self.world_model.query_with_context(task_description)
         
-        print(f"  • Found {len(context['melodic_lines'])} relevant business narratives")
-        print(f"  • Identified {len(context['patterns'])} architectural patterns")
-        print(f"  • Retrieved {len(context['modules'])} modules")
+        logger.info(f1)
+        logger.info(f1)
+        logger.info(f1)
 
         # Step 2: Read source file if this is a file conversion task
         file_content = await self._read_source_file_if_needed(task_description, orchestrator)
@@ -360,7 +363,7 @@ Begin:
             if json_match:
                 try:
                     raw_subtasks = json.loads(json_match.group())
-                except:
+                except Exception:
                     # Fallback to simple structure
                     raw_subtasks = self._generate_initial_subtasks(task_description, context)
             else:
@@ -423,26 +426,26 @@ Begin:
         context: Dict
     ) -> None:
         """Display execution plan summary"""
-        print(f"\n{'='*80}")
+        logger.info(f1)
         print("EXECUTION PLAN SUMMARY")
-        print(f"{'='*80}\n")
+        logger.info(f1)
         
-        print(f"Total subtasks: {len(subtasks)}")
-        print(f"Preserving {len(context['melodic_lines'])} business narratives")
+        logger.info(f1)
+        logger.info(f1)
         if subtasks:
-            print(f"Average confidence: {sum(s.confidence for s in subtasks)/len(subtasks):.2f}")
+            logger.info(f1)
         
         print("\nSubtasks:")
         for i, subtask in enumerate(subtasks, 1):
-            print(f"\n{i}. {subtask.description}")
-            print(f"   Modules: {', '.join(subtask.target_modules)}")
+            logger.info(f1)
+            logger.info(f1)
             if subtask.relevant_narratives:
-                print(f"   Preserves: {', '.join(subtask.relevant_narratives)}")
+                logger.info(f1)
             if subtask.preserves_patterns:
-                print(f"   Patterns: {', '.join(subtask.preserves_patterns)}")
+                logger.info(f1)
             if subtask.warnings:
-                print(f"   ⚠️  {len(subtask.warnings)} warnings")
-            print(f"   Confidence: {subtask.confidence:.2f}")
+                logger.info(f1)
+            logger.info(f1)
         
-        print(f"\n{'='*80}\n")
+        logger.info(f1)
 

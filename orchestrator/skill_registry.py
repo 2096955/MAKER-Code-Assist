@@ -6,9 +6,12 @@ Tracks skill usage, success rates, and handles skill evolution.
 """
 
 import json
+import logging
 from datetime import datetime
 from typing import Dict, Optional, Any, List
 from orchestrator.skill_loader import Skill
+
+logger = logging.getLogger(__name__)
 
 
 class SkillRegistry:
@@ -63,8 +66,8 @@ class SkillRegistry:
             )
             
             return True
-        except Exception as e:
-            print(f"Error registering skill {skill.name}: {e}")
+        except (ValueError, TypeError, AttributeError) as e:
+            logger.error(f"Error registering skill {skill.name}: {e}")
             return False
     
     def update_skill_stats(self, skill_name: str, success: bool) -> bool:
@@ -112,8 +115,8 @@ class SkillRegistry:
             )
             
             return True
-        except Exception as e:
-            print(f"Error updating skill stats for {skill_name}: {e}")
+        except (ValueError, TypeError, AttributeError) as e:
+            logger.error(f"Error updating skill stats for {skill_name}: {e}")
             return False
     
     def get_skill_stats(self, skill_name: str) -> Optional[Dict[str, Any]]:
@@ -131,8 +134,8 @@ class SkillRegistry:
             if data:
                 return json.loads(data)
             return None
-        except Exception as e:
-            print(f"Error getting skill stats for {skill_name}: {e}")
+        except (ValueError, TypeError, json.JSONDecodeError) as e:
+            logger.error(f"Error getting skill stats for {skill_name}: {e}")
             return None
     
     def get_all_skill_stats(self) -> Dict[str, Dict[str, Any]]:
@@ -151,8 +154,8 @@ class SkillRegistry:
                 except json.JSONDecodeError:
                     continue
             return result
-        except Exception as e:
-            print(f"Error getting all skill stats: {e}")
+        except (ValueError, TypeError, json.JSONDecodeError) as e:
+            logger.error(f"Error getting all skill stats: {e}")
             return {}
     
     def merge_similar_skills(self, skill1_name: str, skill2_name: str) -> bool:
@@ -200,8 +203,8 @@ class SkillRegistry:
             self.redis.hdel(self.registry_key, skill2_name)
             
             return True
-        except Exception as e:
-            print(f"Error merging skills {skill1_name} and {skill2_name}: {e}")
+        except (ValueError, TypeError, AttributeError) as e:
+            logger.error(f"Error merging skills {skill1_name} and {skill2_name}: {e}")
             return False
     
     def deprecate_low_performing_skills(self, threshold: float = 0.3) -> List[str]:

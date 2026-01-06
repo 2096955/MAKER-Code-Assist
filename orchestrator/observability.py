@@ -5,9 +5,12 @@ OpenTelemetry tracing for all agent interactions
 """
 
 import os
+import logging
 from functools import wraps
 from typing import Optional, Callable, Any
 import traceback
+
+logger = logging.getLogger(__name__)
 
 # Try to import OpenTelemetry (optional dependency)
 try:
@@ -50,12 +53,12 @@ def setup_phoenix_tracing():
     global _tracer
     
     if not OPENTELEMETRY_AVAILABLE:
-        print("[Phoenix] OpenTelemetry not installed. Install with: pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http")
+        logger.warning("[Phoenix] OpenTelemetry not installed. Install with: pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http")
         _tracer = DummyTracer()
         return _tracer
     
     if not PHOENIX_ENABLED:
-        print("[Phoenix] Observability disabled (PHOENIX_ENABLED=false)")
+        logger.info("[Phoenix] Observability disabled (PHOENIX_ENABLED=false)")
         _tracer = DummyTracer()
         return _tracer
     
@@ -77,10 +80,10 @@ def setup_phoenix_tracing():
         trace.set_tracer_provider(provider)
         
         _tracer = trace.get_tracer(__name__)
-        print(f"[Phoenix] Observability enabled, sending traces to {PHOENIX_ENDPOINT}")
+        logger.info(f"[Phoenix] Observability enabled, sending traces to {PHOENIX_ENDPOINT}")
         return _tracer
-    except Exception as e:
-        print(f"[Phoenix] Failed to initialize: {e}")
+    except (ValueError, AttributeError, ConnectionError) as e:
+        logger.error(f"[Phoenix] Failed to initialize: {e}")
         _tracer = DummyTracer()
         return _tracer
 

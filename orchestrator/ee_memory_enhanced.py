@@ -12,6 +12,9 @@ Enhancements:
 7. Parallel processing for memory operations
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
 import json
 import time
 import hashlib
@@ -451,7 +454,7 @@ class EnhancedHierarchicalMemoryNetwork(HierarchicalMemoryNetwork):
                 if entity_id:
                     entities.append(entity_id)
             except Exception as e:
-                print(f"Warning: Entity extraction failed: {e}")
+                logger.info(f1)
         
         return entities
     

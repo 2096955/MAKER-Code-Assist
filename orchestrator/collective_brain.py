@@ -242,7 +242,7 @@ Synthesized answer (2-3 sentences):"""
                 temperature=0.2
             )
             return synthesis.strip()
-        except:
+        except Exception:
             # Fallback: return highest confidence perspective
             best = max(perspectives, key=lambda p: p.confidence)
             return f"{best.response} (from {best.agent})"

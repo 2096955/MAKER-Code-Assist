@@ -199,7 +199,7 @@ Continue working on this feature. Do not start new features unless explicitly re
             )
             if result.returncode == 0:
                 return result.stdout.strip()
-        except:
+        except (subprocess.SubprocessError, OSError, FileNotFoundError):
             pass
         return "unknown"
     
@@ -215,7 +215,7 @@ Continue working on this feature. Do not start new features unless explicitly re
             if result.returncode == 0:
                 status = result.stdout.strip()
                 return status if status else "clean"
-        except:
+        except (subprocess.SubprocessError, OSError, FileNotFoundError):
             pass
         return "unknown"
 

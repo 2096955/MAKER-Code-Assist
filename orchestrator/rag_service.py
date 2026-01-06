@@ -7,12 +7,15 @@ RAG Service: Local RAG using Qdrant vector database
 """
 
 import os
+import logging
 from typing import List, Dict, Optional
 from pathlib import Path
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 from sentence_transformers import SentenceTransformer
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 class RAGService:
@@ -42,7 +45,7 @@ class RAGService:
         self.client = QdrantClient(url=self.qdrant_url)
         
         # Initialize embedding model
-        print(f"Loading embedding model: {embedding_model}...")
+        logger.info(f"Loading embedding model: {embedding_model}...")
         self.embedder = SentenceTransformer(embedding_model)
         self.embedding_dim = self.embedder.get_sentence_embedding_dimension()
         
@@ -63,9 +66,9 @@ class RAGService:
                         distance=Distance.COSINE
                     )
                 )
-                print(f"Created Qdrant collection: {self.collection_name}")
-        except Exception as e:
-            print(f"Error ensuring collection: {e}")
+                logger.info(f"Created Qdrant collection: {self.collection_name}")
+        except (ValueError, AttributeError, ConnectionError) as e:
+            logger.error(f"Error ensuring collection: {e}")
     
     def add_documents(self, documents: List[Dict[str, str]], batch_size: int = 100):
         """
@@ -106,7 +109,7 @@ class RAGService:
                 points=points
             )
         
-        print(f"Added {len(documents)} documents to {self.collection_name}")
+        logger.info(f"Added {len(documents)} documents to {self.collection_name}")
     
     def search(self, query: str, top_k: int = 5, filter_metadata: Optional[Dict] = None) -> List[Dict]:
         """
@@ -259,7 +262,7 @@ Answer:"""
                 'embedding_dimension': self.embedding_dim,
                 'index_type': 'Qdrant (Database)'
             }
-        except Exception:
+        except (ValueError, AttributeError, ConnectionError):
             return {
                 'total_documents': 0,
                 'total_vectors': 0,

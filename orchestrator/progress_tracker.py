@@ -13,11 +13,14 @@ Usage:
 """
 
 import json
+import logging
 import os
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass, asdict
+
+logger = logging.getLogger(__name__)
 
 # Windows-compatible file locking
 try:
@@ -118,8 +121,9 @@ class ProgressTracker:
                         fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                     elif HAS_MSVCRT:
                         msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
-        except Exception:
+        except (OSError, PermissionError, IOError):
             # Fallback: write without locking (better than crashing)
+            logger.warning("File locking failed, writing without lock")
             with open(self.progress_file, 'a') as f:
                 f.write(log_entry)
                 f.flush()
@@ -140,9 +144,9 @@ class ProgressTracker:
             
             features_data = data.get("features", [])
             return [Feature.from_dict(f) for f in features_data]
-        except (json.JSONDecodeError, KeyError, Exception) as e:
+        except (json.JSONDecodeError, KeyError, OSError, ValueError) as e:
             # If file is corrupted, return empty list
-            self.log_progress(f"Warning: Failed to load feature list: {e}")
+            logger.warning(f"Failed to load feature list: {e}")
             return []
     
     def _save_feature_list(self, features: List[Feature]) -> None:
@@ -173,8 +177,9 @@ class ProgressTracker:
                         fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                     elif HAS_MSVCRT:
                         msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
-        except Exception:
+        except (OSError, PermissionError, IOError):
             # Fallback: write without locking (better than crashing)
+            logger.warning("File locking failed, writing without lock")
             with open(self.feature_list_file, 'w') as f:
                 json.dump(data, f, indent=2)
                 f.flush()
@@ -292,7 +297,7 @@ class ProgressTracker:
             try:
                 with open(self.progress_file, 'r') as f:
                     progress_lines = len(f.readlines())
-            except:
+            except (OSError, PermissionError, IOError):
                 pass
         
         return {
@@ -323,6 +328,7 @@ class ProgressTracker:
             
             # Return last N lines
             return [line.strip() for line in all_lines[-lines:] if line.strip()]
-        except Exception:
+        except (OSError, PermissionError, json.JSONDecodeError, ValueError):
+            logger.warning("Failed to get completed features")
             return []
 
