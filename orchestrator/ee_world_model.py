@@ -156,26 +156,26 @@ class CodebaseWorldModel:
         Construct hierarchical memory by analysing codebase
         Implements Algorithm 3.1 (Melodic Line Detection)
         """
-        print("Building Expositional Engineering World Model...")
+        logger.info("Building Expositional Engineering World Model...")
         
         # Step 1: Build L₁ (Structural Layer)
-        print("  [L₁] Analysing code structure...")
+        logger.info("  [L1] Analysing code structure...")
         self._build_structural_layer()
         
         # Step 2: Build L₂ (Pattern Layer)
-        print("  [L₂] Detecting architectural patterns...")
+        logger.info("  [L2] Detecting architectural patterns...")
         self._build_pattern_layer()
         
         # Step 3: Build L₃ (Melodic Layer)
-        print("  [L₃] Extracting business narrative flows...")
+        logger.info("  [L3] Extracting business narrative flows...")
         self._build_melodic_layer()
         
         # Step 4: Initialise Bayesian updater
-        print("  [Bayesian] Initialising belief system...")
+        logger.info("  [Bayesian] Initialising belief system...")
         all_modules = list(self.L1_module_registry.keys())
         self.belief_updater = ZellnerSlowBayesianUpdater(all_modules)
         
-        print(f"World Model Complete: {len(all_modules)} modules, "
+        logger.info(f"World Model Complete: {len(all_modules)} modules, "
               f"{len(self.L2_patterns)} patterns, "
               f"{len(self.L3_melodic_lines)} melodic lines")
     

@@ -402,7 +402,7 @@ class CodebaseMCPServer:
                 try:
                     if file_path.stat().st_size > MAX_FILE_SIZE:
                         continue
-                except:
+                except OSError:
                     continue
                 
                 # Detect language
@@ -426,7 +426,7 @@ class CodebaseMCPServer:
                                 # Extract dependencies
                                 deps = self._extract_dependencies(content, file_path)
                                 all_dependencies.extend(deps)
-                    except:
+                    except (OSError, IOError, UnicodeDecodeError):
                         pass
                 
                 structure["total_files"] += 1
@@ -459,7 +459,7 @@ class CodebaseMCPServer:
                         content = f.read()
                         if query.lower() in content.lower():
                             results.append(f" {path.name}: Found '{query}'")
-                except:
+                except (OSError, IOError, UnicodeDecodeError):
                     pass
             elif path.is_dir():
                 for doc_file in path.rglob('*.md'):
@@ -468,7 +468,7 @@ class CodebaseMCPServer:
                             content = f.read()
                             if query.lower() in content.lower():
                                 results.append(f" {doc_file.name}: Found '{query}'")
-                    except:
+                    except (OSError, IOError, UnicodeDecodeError):
                         pass
         
         return "\n".join(results) if results else f" No docs found for '{query}'"
@@ -991,7 +991,7 @@ async def _call_rag_search(query: str, top_k: int = 5, hybrid: bool = True) -> s
                 return formatted
             except Exception as e:
                 # Fall back to semantic-only if hybrid fails
-                print(f"Warning: Hybrid search failed, using semantic-only: {e}")
+                logger.warning(f"Hybrid search failed, using semantic-only: {e}")
         
         # Fallback: Semantic-only search
         results = rag.search(query, top_k=top_k)

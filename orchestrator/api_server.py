@@ -5,6 +5,9 @@ FastAPI Server: REST API for workflow execution
 
 import os
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 import time
 import aiofiles
 from pathlib import Path
@@ -215,8 +218,8 @@ async def chat_completions(request: ChatCompletionRequest):
             json.dumps(response)
             return response
         except json.JSONDecodeError as e:
-            print(f"JSON error in content: {e}")
-            print(f"Content preview: {full_content[:500]}")
+            logger.error(f"JSON error in content: {e}")
+            logger.debug(f"Content preview: {full_content[:500]}")
             raise HTTPException(status_code=500, detail=str(e))
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))

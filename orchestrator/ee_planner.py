@@ -45,12 +45,12 @@ class EEPlannerAgent:
         self.mcp = mcp_client
         
         # Initialize EE World Model
-        print("Initialising Expositional Engineering World Model...")
+        logger.info("Initialising Expositional Engineering World Model...")
         self.world_model = CodebaseWorldModel(
             codebase_path=codebase_path,
             mcp_client=mcp_client
         )
-        print("World Model ready.")
+        logger.info("World Model ready.")
     
     def plan_task(self, task_description: str) -> List[EnhancedSubtask]:
         """
@@ -63,7 +63,7 @@ class EEPlannerAgent:
         logger.info(f1)
         
         # Step 1: Query world model hierarchically
-        print("[1/4] Querying hierarchical world model...")
+        logger.info("[1/4] Querying hierarchical world model...")
         context = self.world_model.query_with_context(task_description)
         
         logger.info(f1)
@@ -71,17 +71,17 @@ class EEPlannerAgent:
         logger.info(f1)
         
         # Step 2: Generate narrative-aware prompt
-        print("[2/4] Constructing narrative-aware prompt...")
+        logger.info("[2/4] Constructing narrative-aware prompt...")
         prompt = self._construct_narrative_prompt(task_description, context)
         
         # Step 3: LLM task decomposition (would use actual LLM)
-        print("[3/4] Generating subtasks...")
+        logger.info("[3/4] Generating subtasks...")
         # For now, generate a simple plan structure
         # In full implementation, would call: raw_subtasks = self.llm.generate(prompt)
         raw_subtasks = self._generate_initial_subtasks(task_description, context)
         
         # Step 4: Augment with EE context
-        print("[4/4] Augmenting with narrative context...")
+        logger.info("[4/4] Augmenting with narrative context...")
         enhanced_subtasks = self._augment_with_narrative_context(raw_subtasks, context)
         
         # Display summary
@@ -331,7 +331,7 @@ Begin:
         logger.info(f1)
         
         # Step 1: Query world model hierarchically
-        print("[1/4] Querying hierarchical world model...")
+        logger.info("[1/4] Querying hierarchical world model...")
         context = self.world_model.query_with_context(task_description)
         
         logger.info(f1)
@@ -342,11 +342,11 @@ Begin:
         file_content = await self._read_source_file_if_needed(task_description, orchestrator)
 
         # Step 3: Generate narrative-aware prompt
-        print("[2/4] Constructing narrative-aware prompt...")
+        logger.info("[2/4] Constructing narrative-aware prompt...")
         prompt = self._construct_narrative_prompt(task_description, context, file_content=file_content)
 
         # Step 4: Call actual MAKER Planner LLM
-        print("[3/4] Generating subtasks with MAKER Planner...")
+        logger.info("[3/4] Generating subtasks with MAKER Planner...")
         planner_prompt = orchestrator._load_system_prompt("planner")
         
         # Call the actual planner agent
@@ -370,7 +370,7 @@ Begin:
                 raw_subtasks = self._generate_initial_subtasks(task_description, context)
         
         # Step 4: Augment with EE context
-        print("[4/4] Augmenting with narrative context...")
+        logger.info("[4/4] Augmenting with narrative context...")
         enhanced_subtasks = self._augment_with_narrative_context(raw_subtasks, context)
         
         # Display summary
@@ -427,7 +427,7 @@ Begin:
     ) -> None:
         """Display execution plan summary"""
         logger.info(f1)
-        print("EXECUTION PLAN SUMMARY")
+        logger.info("EXECUTION PLAN SUMMARY")
         logger.info(f1)
         
         logger.info(f1)
@@ -435,7 +435,7 @@ Begin:
         if subtasks:
             logger.info(f1)
         
-        print("\nSubtasks:")
+        logger.info("Subtasks:")
         for i, subtask in enumerate(subtasks, 1):
             logger.info(f1)
             logger.info(f1)

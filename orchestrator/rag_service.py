@@ -243,14 +243,14 @@ Answer:"""
                             }
                         })
                 except Exception as e:
-                    print(f"Error reading {file_path}: {e}")
+                    logger.warning(f"Error reading {file_path}: {e}")
         
         # Add to vector database
         if documents:
             self.add_documents(documents)
-            print(f"Indexed {len(documents)} chunks from {codebase_root}")
+            logger.info(f"Indexed {len(documents)} chunks from {codebase_root}")
         else:
-            print("No documents found to index")
+            logger.warning("No documents found to index")
     
     def get_stats(self) -> Dict:
         """Get statistics about the collection"""

@@ -4,6 +4,9 @@ Orchestrator: Coordinates agents, manages state, handles streaming
 """
 
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 import time
 import os
 import httpx
@@ -492,7 +495,7 @@ class Orchestrator:
         
         # Request queue manager: Prevents mutex contention on llama.cpp servers
         self.request_queue = RequestQueueManager(max_concurrent_per_model=1)
-        print("[Orchestrator] Request queue initialized (sequential processing per model)")
+        logger.info("Request queue initialized (sequential processing per model)")
 
         # Long-running support (Phase 1)
         self.enable_long_running = os.getenv("ENABLE_LONG_RUNNING", "false").lower() == "true"
@@ -502,7 +505,7 @@ class Orchestrator:
             self.progress_tracker = ProgressTracker(workspace_path)
             self.session_manager = SessionManager(self.progress_tracker)
             self.checkpoint_manager = CheckpointManager(self.progress_tracker, self.redis)
-            print("[Orchestrator] Long-running support enabled")
+            logger.info("Long-running support enabled")
         else:
             self.progress_tracker = None
             self.session_manager = None
@@ -519,7 +522,7 @@ class Orchestrator:
             self.skill_matcher = SkillMatcher(self.skill_loader, rag_service=None)
             # Index skills in RAG if RAG is available
             # Note: RAG integration can be added later when RAG service is initialized
-            print("[Orchestrator] Skills framework enabled")
+            logger.info("Skills framework enabled")
         else:
             self.skill_loader = None
             self.skill_matcher = None
@@ -531,7 +534,7 @@ class Orchestrator:
             skills_path = Path(skills_dir)
             self.skill_extractor = SkillExtractor(skills_path, self.skill_loader)
             self.skill_registry = SkillRegistry(self.redis)
-            print("[Orchestrator] Skill learning enabled")
+            logger.info("Skill learning enabled")
         else:
             self.skill_extractor = None
             self.skill_registry = None
@@ -601,7 +604,7 @@ class Orchestrator:
                     update_callback=update_world_model
                 )
                 self.codebase_watcher.start()
-                print("[Orchestrator] Codebase watcher enabled (real-time sync)")
+                logger.info("Codebase watcher enabled (real-time sync)")
             except ImportError:
                 logger.warning("watchdog not installed, codebase watcher disabled")
             except Exception as e:
@@ -614,18 +617,18 @@ class Orchestrator:
                 kuzu_db_path = os.getenv("KUZU_DB_PATH", "./kuzu_workflow_db")
                 self.workflow_memory = SharedWorkflowMemory(db_path=kuzu_db_path)
                 if self.workflow_memory.enabled:
-                    print("[Orchestrator] ✨ Melodic line memory enabled (Kùzu graph)")
-                    print(f"[Orchestrator]    Agents will maintain coherent reasoning chain")
+                    logger.info("Melodic line memory enabled (Kuzu graph)")
+                    logger.info("Agents will maintain coherent reasoning chain")
 
                     # Initialize collective brain for multi-agent consensus
                     self.collective_brain = CollectiveBrain(self)
-                    print("[Orchestrator] 🧠 Collective brain enabled (multi-agent consensus)")
+                    logger.info("Collective brain enabled (multi-agent consensus)")
                 else:
-                    print("[Orchestrator] ⚠️  Kùzu not available, melodic memory disabled")
+                    logger.warning("Kuzu not available, melodic memory disabled")
                     self.collective_brain = None
                     self.workflow_memory = None
             except Exception as e:
-                print(f"[Orchestrator] Failed to initialize melodic memory: {e}")
+                logger.error(f"Failed to initialize melodic memory: {e}")
                 self.workflow_memory = None
                 self.collective_brain = None
         else:
@@ -634,9 +637,9 @@ class Orchestrator:
 
         # Log MAKER mode for visibility
         if self.maker_mode == "low":
-            print(f"[Orchestrator] 🎚️  MAKER Mode: LOW (Planner reflection validation, ~40-50GB RAM)")
+            logger.info("MAKER Mode: LOW (Planner reflection validation, ~40-50GB RAM)")
         else:
-            print(f"[Orchestrator] 🎚️  MAKER Mode: HIGH (Reviewer validation, ~128GB RAM)")
+            logger.info("MAKER Mode: HIGH (Reviewer validation, ~128GB RAM)")
     
     def _load_system_prompt(self, agent_name: str) -> str:
         """Load system prompt from prompts/ directory"""
@@ -664,10 +667,10 @@ class Orchestrator:
                     mcp_client=self._mcp_client_wrapper,
                     model_name="nemotron-nano-8b"
                 )
-                print("[Orchestrator] EE Planner initialized")
+                logger.info("EE Planner initialized")
             except Exception as e:
-                print(f"[Orchestrator] Failed to initialize EE Planner: {e}")
-                print("[Orchestrator] Falling back to standard planner")
+                logger.error(f"Failed to initialize EE Planner: {e}")
+                logger.warning("Falling back to standard planner")
                 self.ee_mode = False
                 return None
         
@@ -717,7 +720,7 @@ class Orchestrator:
                 "average_confidence": sum(s.confidence for s in enhanced_subtasks) / len(enhanced_subtasks) if enhanced_subtasks else 0.0
             }
         except Exception as e:
-            print(f"[Orchestrator] EE Planner error: {e}")
+            logger.error(f"EE Planner error: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -787,7 +790,7 @@ class Orchestrator:
             for ml in melodic_lines:
                 self.world_model.l3_melodic_lines[ml.id] = ml
         
-        print(f"[EE Memory] Initialized: {self.world_model.stats['l0_count']} files, "
+        logger.info(f"[EE Memory] Initialized: {self.world_model.stats['l0_count']} files, "
               f"{self.world_model.stats['l1_count']} entities, "
               f"{self.world_model.stats['l2_count']} patterns, "
               f"{self.world_model.stats['l3_count']} melodic lines")
@@ -1098,13 +1101,13 @@ class Orchestrator:
             melodic_line_context = ""
             if task_id and self.workflow_memory:
                 melodic_line_context = self.workflow_memory.get_context_for_agent(task_id, "coder")
-                print(f"[DEBUG] Melodic line context injected: {len(melodic_line_context)} chars")
+                logger.debug(f"Melodic line context injected: {len(melodic_line_context)} chars")
 
             if task_id:
                 compressor = self.get_context_compressor(task_id)
                 compressed_context = await compressor.get_context()
                 stats = compressor.get_stats()
-                print(f"[DEBUG] Context compression stats: {stats}")
+                logger.debug(f"Context compression stats: {stats}")
                 # Combine ALL contexts: narrative + melodic line + conversation history
                 full_context = f"{narrative_context}\n\n{melodic_line_context}\n\n[Conversation History]\n{compressed_context}"
             else:
@@ -1134,7 +1137,7 @@ Context: {full_context}
 
 Generate code implementation.
 """
-            print(f"[DEBUG] generate_candidates: task_desc={len(task_desc)} chars, context={len(full_context)} chars, request={len(coder_request)} chars")
+            logger.debug(f"generate_candidates: task_desc={len(task_desc)} chars, context={len(full_context)} chars, request={len(coder_request)} chars")
             tasks = [
                 self.call_agent_sync(AgentName.CODER, coder_prompt, coder_request, temperature=0.3 + (i * 0.1))
                 for i in range(n)
@@ -1306,7 +1309,7 @@ Vote for the BEST candidate that preserves narrative coherence. Reply with only:
             self.redis.incr(key)
             self.redis.expire(key, 86400 * 30)  # 30 day TTL
         except Exception as e:
-            print(f"Warning: Failed to log skill usage for {skill_name}: {e}")
+            logger.warning(f"Failed to log skill usage for {skill_name}: {e}")
     
     async def _classify_request(self, user_input: str) -> str:
         """
@@ -1360,7 +1363,7 @@ Category:"""
                 # Fallback to pattern matching if LLM response is unclear
                 return self._classify_request_fallback(user_input)
         except Exception as e:
-            print(f"[Warning] Classification failed: {e}, using fallback")
+            logger.warning(f"Classification failed: {e}, using fallback")
             return self._classify_request_fallback(user_input)
 
     def _classify_request_fallback(self, user_input: str) -> str:
@@ -1463,7 +1466,7 @@ Be direct. Output working code in a markdown code block. No questions."""
                         if overview.get('top_dirs'):
                             yield f"**Structure:** {', '.join(overview['top_dirs'])}\n"
                         return
-                except:
+                except (json.JSONDecodeError, TypeError, KeyError):
                     pass  # Cache miss, continue to analyze
 
                 # Try to analyze the specified path directly from filesystem
@@ -1495,7 +1498,7 @@ Be direct. Output working code in a markdown code block. No questions."""
                                     file_path = os.path.join(root, file)
                                     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                                         total_lines += sum(1 for _ in f)
-                                except:
+                                except (OSError, IOError, UnicodeDecodeError):
                                     pass
 
                     # Get directory structure
@@ -1514,7 +1517,7 @@ Be direct. Output working code in a markdown code block. No questions."""
                                 with open(readme_path, 'r', encoding='utf-8', errors='ignore') as f:
                                     readme_content = f.read()
                                 break
-                            except:
+                            except (OSError, IOError, UnicodeDecodeError):
                                 pass
 
                     # Use Gemma2-2B (Preprocessor) to intelligently extract description from README
@@ -1534,7 +1537,7 @@ Be direct. Output working code in a markdown code block. No questions."""
                             description_text = description_text.strip()[:300]
                             if description_text and not description_text.startswith("Error:"):
                                 yield f"{description_text}\n\n"
-                        except:
+                        except Exception:
                             pass  # Fall back to showing just metrics
 
                     yield f"**Files:** {total_files}\n"
@@ -1556,7 +1559,7 @@ Be direct. Output working code in a markdown code block. No questions."""
                             'analyzed_at': int(time.time())
                         }
                         self.redis.setex(memory_key, 86400 * 7, json.dumps(overview))  # 7 day TTL
-                    except:
+                    except Exception:
                         pass  # Don't fail if Redis unavailable
 
                     return
@@ -1584,7 +1587,7 @@ Be direct. Output working code in a markdown code block. No questions."""
                             description = description.strip()[:300]
                             if description and not description.startswith("Error:"):
                                 yield f"{description}\n\n"
-                        except:
+                        except Exception:
                             pass
 
                     languages = overview_result.get('languages', {})
