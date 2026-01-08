@@ -284,7 +284,7 @@ class CodeVerifier:
         results['warnings'].extend(completeness_warnings)
         if not complete:
             # Don't fail, but warn strongly
-            results['warnings'].insert(0, "⚠️ Code appears incomplete - contains TODOs or placeholders")
+            results['warnings'].insert(0, "[WARNING] Code appears incomplete - contains TODOs or placeholders")
         
         # 5. Test execution (if test file exists)
         if run_tests and file_path:

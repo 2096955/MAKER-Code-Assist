@@ -566,7 +566,7 @@ class CodebaseMCPServer:
                         # Format results
                         rel_path = file_path.relative_to(self.root)
                         for line_num, ref_type in file_refs:
-                            marker = "📌" if ref_type == "definition" else "🔗"
+                            marker = "[DEF]" if ref_type == "definition" else "[REF]"
                             refs.append(f"{marker} {rel_path}:{line_num} ({ref_type})")
                     except Exception:
                         pass

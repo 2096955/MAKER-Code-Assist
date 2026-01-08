@@ -285,7 +285,7 @@ class EnhancedAgentMemoryNetwork(AgentMemoryNetwork):
 💻 Reference Implementation:
 {code[:4000] if code else "No reference code"}
 
-✅ Code Generation Guidelines:
+[OK] Code Generation Guidelines:
 - Follow patterns: {', '.join([p[0] for p in relevant_patterns[:3]]) if relevant_patterns else 'general patterns'}
 - Maintain consistency with {len(entities)} related entities
 - Preserve codebase style and conventions"""
@@ -310,20 +310,20 @@ class EnhancedAgentMemoryNetwork(AgentMemoryNetwork):
         
         return f"""Enhanced Reviewer Context:
 
-⚠️ Risk-Related Narratives to Preserve:
+[WARNING] Risk-Related Narratives to Preserve:
 {chr(10).join(f"- {n}" for n in risk_narratives[:3]) if risk_narratives else "No specific risk narratives"}
 
-✅ Quality Patterns:
+[OK] Quality Patterns:
 {chr(10).join(f"- {p}" for p in patterns[:3]) if patterns else "No specific quality patterns"}
 
 📋 Reference Code for Comparison:
 {code[:2000] if code else "No reference code"}
 
 🔍 Review Checklist:
-1. ✅ Preserves risk narratives: {', '.join(risk_narratives[:2]) if risk_narratives else 'N/A'}
-2. ✅ Adheres to quality patterns: {', '.join(patterns[:2]) if patterns else 'N/A'}
-3. ✅ Consistent with codebase style
-4. ✅ No breaking changes to existing flows"""
+1. [OK] Preserves risk narratives: {', '.join(risk_narratives[:2]) if risk_narratives else 'N/A'}
+2. [OK] Adheres to quality patterns: {', '.join(patterns[:2]) if patterns else 'N/A'}
+3. [OK] Consistent with codebase style
+4. [OK] No breaking changes to existing flows"""
     
     def _enhanced_voter_context(
         self, 

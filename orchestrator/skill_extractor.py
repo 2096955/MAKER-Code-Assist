@@ -359,7 +359,7 @@ class SkillExtractor:
             content_parts.append("")
             anti_patterns = self._extract_anti_patterns(code, feedback)
             for anti_pattern in anti_patterns:
-                content_parts.append(f"❌ {anti_pattern}")
+                content_parts.append(f"[ERROR] {anti_pattern}")
             content_parts.append("")
         
         # Code example

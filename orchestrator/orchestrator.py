@@ -1697,7 +1697,7 @@ Which files to read? JSON array only:"""
             # Final fallback: use orchestrator.py
             if not file_paths:
                 file_paths = ["orchestrator/orchestrator.py"]
-                yield f"⚠️ Using default: orchestrator/orchestrator.py (RAG and analysis unavailable)\n\n"
+                yield f"[WARNING] Using default: orchestrator/orchestrator.py (RAG and analysis unavailable)\n\n"
             else:
                 yield f"Reading: {', '.join(file_paths[:3])}\n\n"
 
@@ -1795,7 +1795,7 @@ Provide specific, practical guidance based on THIS code."""
 
                     # Show dissenting opinions if any
                     if result['dissenting']:
-                        yield f"⚠️ **Important Consideration:** {result['dissenting']}\n\n"
+                        yield f"[WARNING] **Important Consideration:** {result['dissenting']}\n\n"
 
                     return
                 except Exception as e:
@@ -1969,7 +1969,7 @@ OR
                     yield f"  • {subtask['description']}\n"
                     if subtask.get('warnings'):
                         for warning in subtask['warnings']:
-                            yield f"    ⚠️  {warning}\n"
+                            yield f"    [WARNING]  {warning}\n"
             else:
                 # Fallback to standard planner
                 yield "[PLANNER] EE Planner failed, falling back to standard planner...\n"
@@ -2000,7 +2000,7 @@ OR
                     # Security: Validate file path before reading (same as CODER section)
                     original_path = file_to_read  # Keep original for error messages
                     if not self._is_safe_file_path(file_to_read):
-                        yield f"[PLANNER] ⚠️ Security: Blocked access to restricted path: {original_path}\n"
+                        yield f"[PLANNER] [WARNING] Security: Blocked access to restricted path: {original_path}\n"
                         yield f"[PLANNER] Only user home directory and codebase files are allowed.\n"
                     else:
                         # Remove leading slash if absolute path (make relative for MCP)
@@ -2192,7 +2192,7 @@ Create an execution plan with tasks that preserves thematic flows. Use MCP tools
                 if file_path:
                     # Security: Validate file path before reading
                     if not self._is_safe_file_path(file_path):
-                        yield f"[CODER] ⚠️ Security: Blocked access to restricted path: {file_path}\n"
+                        yield f"[CODER] [WARNING] Security: Blocked access to restricted path: {file_path}\n"
                         yield f"[CODER] Only user home directory and codebase files are allowed.\n"
                     else:
                         yield f"[CODER] Attempting to read source file: {file_path}\n"
@@ -2204,9 +2204,9 @@ Create an execution plan with tasks that preserves thematic flows. Use MCP tools
                             try:
                                 with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                                     source_code = f.read()
-                                yield f"[CODER] ✅ Read file directly from filesystem ({len(source_code)} chars)\n"
+                                yield f"[CODER] [OK] Read file directly from filesystem ({len(source_code)} chars)\n"
                             except Exception as e:
-                                yield f"[CODER] ⚠️ Filesystem read failed: {str(e)}\n"
+                                yield f"[CODER] [WARNING] Filesystem read failed: {str(e)}\n"
                         
                         # If direct read failed, try MCP (for files in codebase)
                         if not source_code:
@@ -2214,14 +2214,14 @@ Create an execution plan with tasks that preserves thematic flows. Use MCP tools
                             mcp_path = file_path.lstrip('/') if file_path.startswith('/') else file_path
                             source_code = await self._query_mcp("read_file", {"path": mcp_path, "chunked": None})
                             if source_code and not source_code.startswith(" File not found") and not source_code.startswith(" MCP"):
-                                yield f"[CODER] ✅ Read file via MCP ({len(source_code)} chars)\n"
+                                yield f"[CODER] [OK] Read file via MCP ({len(source_code)} chars)\n"
                             else:
                                 source_code = None
                         
                         if source_code and len(source_code) > 10:  # Valid source code
                             source_code_context = f"\n\n=== SOURCE FILE TO CONVERT ===\n{source_code}\n\n=== END SOURCE FILE ===\n\n"
                         else:
-                            yield f"[CODER] ⚠️ Could not load source file. Will proceed without it.\n"
+                            yield f"[CODER] [WARNING] Could not load source file. Will proceed without it.\n"
             
             # PROACTIVE GRAPH CHECK for Coder
             # Extract function/class names from task description
@@ -2247,7 +2247,7 @@ Create an execution plan with tasks that preserves thematic flows. Use MCP tools
                                     caller_count = len(str(callers_result).split('\n')) if callers_result else 0
                                 if caller_count > 0:
                                     graph_warnings.append(
-                                        f"⚠️ {entity_name} has {caller_count} existing callers - ensure backward compatibility"
+                                        f"[WARNING] {entity_name} has {caller_count} existing callers - ensure backward compatibility"
                                     )
                         except Exception as e:
                             logger.debug(f"Graph check failed for {entity_name}: {e}")
@@ -2399,9 +2399,9 @@ Run tests and validate code quality.
                 )
                 
                 if not verification_results['valid']:
-                    yield f"⚠️ Verification failed:\n"
+                    yield f"[WARNING] Verification failed:\n"
                     for error in verification_results['errors']:
-                        yield f"  ❌ {error}\n"
+                        yield f"  [ERROR] {error}\n"
                     yield "\n[CODER] Fixing syntax errors...\n"
                     # Don't approve, continue to next iteration
                     state.review_feedback = {
@@ -2412,13 +2412,13 @@ Run tests and validate code quality.
                     continue
                 
                 if verification_results['warnings']:
-                    yield f"⚠️ Verification warnings:\n"
+                    yield f"[WARNING] Verification warnings:\n"
                     for warning in verification_results['warnings'][:5]:  # Show first 5
-                        yield f"  ⚠️ {warning[:150]}\n"
+                        yield f"  [WARNING] {warning[:150]}\n"
                     
                     # If code appears incomplete, don't approve
                     if any('incomplete' in w.lower() or 'todo' in w.lower() for w in verification_results['warnings']):
-                        yield "\n❌ Code appears incomplete. Requesting revision...\n"
+                        yield "\n[ERROR] Code appears incomplete. Requesting revision...\n"
                         state.review_feedback = {
                             "status": "failed",
                             "feedback": "Code verification detected incomplete implementation (TODOs/placeholders found)"
@@ -2428,11 +2428,11 @@ Run tests and validate code quality.
                 
                 if verification_results['tests_run']:
                     if verification_results['tests_passed']:
-                        yield "✅ All tests passed!\n"
+                        yield "[OK] All tests passed!\n"
                     else:
-                        yield f"⚠️ Tests failed (code may still work, but tests need fixing)\n"
+                        yield f"[WARNING] Tests failed (code may still work, but tests need fixing)\n"
                 
-                yield "✅ Code verification complete\n"
+                yield "[OK] Code verification complete\n"
                 state.status = "complete"
                 state.save_to_redis(self.redis)
                 yield "\n Code approved!\n"
@@ -2669,7 +2669,7 @@ Run tests and validate code quality.
                 
                 if file_path:
                     if not self._is_safe_file_path(file_path):
-                        yield f"[CODER] ⚠️ Security: Blocked access to restricted path: {file_path}\n"
+                        yield f"[CODER] [WARNING] Security: Blocked access to restricted path: {file_path}\n"
                     else:
                         yield f"[CODER] Attempting to read source file: {file_path}\n"
                         
@@ -2678,22 +2678,22 @@ Run tests and validate code quality.
                             try:
                                 with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                                     source_code = f.read()
-                                yield f"[CODER] ✅ Read file directly from filesystem ({len(source_code)} chars)\n"
+                                yield f"[CODER] [OK] Read file directly from filesystem ({len(source_code)} chars)\n"
                             except Exception as e:
-                                yield f"[CODER] ⚠️ Filesystem read failed: {str(e)}\n"
+                                yield f"[CODER] [WARNING] Filesystem read failed: {str(e)}\n"
                         
                         if not source_code:
                             mcp_path = file_path.lstrip('/') if file_path.startswith('/') else file_path
                             source_code = await self._query_mcp("read_file", {"path": mcp_path, "chunked": None})
                             if source_code and not source_code.startswith(" File not found") and not source_code.startswith(" MCP"):
-                                yield f"[CODER] ✅ Read file via MCP ({len(source_code)} chars)\n"
+                                yield f"[CODER] [OK] Read file via MCP ({len(source_code)} chars)\n"
                             else:
                                 source_code = None
                         
                         if source_code and len(source_code) > 10:
                             source_code_context = f"\n\n=== SOURCE FILE TO CONVERT ===\n{source_code}\n\n=== END SOURCE FILE ===\n\n"
                         else:
-                            yield f"[CODER] ⚠️ Could not load source file. Will proceed without it.\n"
+                            yield f"[CODER] [WARNING] Could not load source file. Will proceed without it.\n"
             
             # PROACTIVE GRAPH CHECK for Coder
             enable_code_graph = os.getenv("ENABLE_CODE_GRAPH", "true").lower() == "true"
@@ -2716,7 +2716,7 @@ Run tests and validate code quality.
                                     caller_count = len(str(callers_result).split('\n')) if callers_result else 0
                                 if caller_count > 0:
                                     graph_warnings.append(
-                                        f"⚠️ {entity_name} has {caller_count} existing callers - ensure backward compatibility"
+                                        f"[WARNING] {entity_name} has {caller_count} existing callers - ensure backward compatibility"
                                     )
                         except Exception as e:
                             logger.debug(f"Graph check failed for {entity_name}: {e}")
@@ -2815,9 +2815,9 @@ Run tests and validate code quality.
                 )
                 
                 if not verification_results['valid']:
-                    yield f"⚠️ Verification failed:\n"
+                    yield f"[WARNING] Verification failed:\n"
                     for error in verification_results['errors']:
-                        yield f"  ❌ {error}\n"
+                        yield f"  [ERROR] {error}\n"
                     yield "\n[CODER] Fixing syntax errors...\n"
                     state.review_feedback = {
                         "status": "failed",
@@ -2827,12 +2827,12 @@ Run tests and validate code quality.
                     continue
                 
                 if verification_results['warnings']:
-                    yield f"⚠️ Verification warnings:\n"
+                    yield f"[WARNING] Verification warnings:\n"
                     for warning in verification_results['warnings'][:5]:
-                        yield f"  ⚠️ {warning[:150]}\n"
+                        yield f"  [WARNING] {warning[:150]}\n"
                     
                     if any('incomplete' in w.lower() or 'todo' in w.lower() for w in verification_results['warnings']):
-                        yield "\n❌ Code appears incomplete. Requesting revision...\n"
+                        yield "\n[ERROR] Code appears incomplete. Requesting revision...\n"
                         state.review_feedback = {
                             "status": "failed",
                             "feedback": "Code verification detected incomplete implementation (TODOs/placeholders found)"
@@ -2842,11 +2842,11 @@ Run tests and validate code quality.
                 
                 if verification_results['tests_run']:
                     if verification_results['tests_passed']:
-                        yield "✅ All tests passed!\n"
+                        yield "[OK] All tests passed!\n"
                     else:
-                        yield f"⚠️ Tests failed (code may still work, but tests need fixing)\n"
+                        yield f"[WARNING] Tests failed (code may still work, but tests need fixing)\n"
                 
-                yield "✅ Code verification complete\n"
+                yield "[OK] Code verification complete\n"
                 state.status = "complete"
                 state.save_to_redis(self.redis)
                 yield "\n Code approved!\n"

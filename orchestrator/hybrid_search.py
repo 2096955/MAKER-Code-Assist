@@ -54,13 +54,13 @@ class HybridSearch:
                 # Use MCP find_references for keyword search
                 refs_result = self.mcp.find_references(keyword)
                 
-                # Parse results (format: "📌 file.py:42 (definition)" or "🔗 file.py:100 (reference)")
+                # Parse results (format: "[DEF] file.py:42 (definition)" or "[REF] file.py:100 (reference)")
                 for line in refs_result.split('\n'):
                     if not line.strip() or line.startswith(' No'):
                         continue
                     
-                    # Parse: "📌 orchestrator/orchestrator.py:123 (definition)"
-                    match = re.match(r'[📌🔗]\s+([^:]+):(\d+)\s+\((\w+)\)', line)
+                    # Parse: "[DEF] orchestrator/orchestrator.py:123 (definition)"
+                    match = re.match(r'[[DEF][REF]]\s+([^:]+):(\d+)\s+\((\w+)\)', line)
                     if match:
                         file_path, line_num, ref_type = match.groups()
                         results.append({

@@ -235,7 +235,7 @@ Begin:
         if not warnings:
             return "No architectural integrity warnings."
         
-        return "\n".join(f"⚠️  {warning}" for warning in warnings)
+        return "\n".join(f"[WARNING]  {warning}" for warning in warnings)
     
     def _generate_initial_subtasks(self, task_description: str, context: Dict) -> Dict:
         """

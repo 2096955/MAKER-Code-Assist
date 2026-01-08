@@ -754,14 +754,14 @@ class CodebaseWorldModel:
             missing_modules = set(line.modules) - set(modules)
             if missing_modules:
                 warnings.append(
-                    f"⚠️  Business narrative '{line.name}' may be affected. "
+                    f"[WARNING]  Business narrative '{line.name}' may be affected. "
                     f"Consider including modules: {', '.join(missing_modules)}"
                 )
             
             for from_mod, to_mod in line.critical_paths:
                 if from_mod in modules and to_mod not in modules:
                     warnings.append(
-                        f"⚠️  Critical dependency: {from_mod} → {to_mod} "
+                        f"[WARNING]  Critical dependency: {from_mod} → {to_mod} "
                         f"is part of '{line.name}' narrative"
                     )
         
