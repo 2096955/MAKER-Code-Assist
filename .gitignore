@@ -131,3 +131,4 @@ results/phoenix_evals/
 
 # Test scripts (kept in git for documentation)
 # test_file_streaming.sh is NOT ignored
+.env
